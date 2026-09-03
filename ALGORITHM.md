@@ -195,6 +195,22 @@ Implementation: `qqq/cycle.py`, driven one-shot by `qqq/orchestrator.py`.
 - **`get_dividend_calendar` on the live Alpaca adapter returns `[]`**, so the
   ex-div safety check passes trivially. Do not sell calls live until this is
   wired (Polygon's dividends endpoint already works in the backtest adapter).
+- **The ladder exhausts itself in a sustained decline.** §5's anti-clustering
+  rule allows each zone once per reset, and §5's recenter only fires on a new
+  high. In a one-directional fall those combine badly: every zone is consumed
+  in the first few percent, and the engine then does nothing for the rest of
+  the decline. Measured at the trough of the Feb–Apr 2025 drawdown
+  (2025-04-08, QQQ 416.36 against a reference of 538.19): all 5 zones filled,
+  no zone available, target exposure 3.32 units, held 1.00. Across the whole
+  Feb–May 2025 window the engine opened **zero** spreads — in precisely the
+  conditions the strategy exists for. The rule assumes the reference recenters
+  reasonably often; a bear market is exactly when it never does.
+- **Over 2.5 years the option overlay contributed −$218.** Backtest 2024-03-01
+  to 2026-08-28 (627 sessions, 83 spreads, including the −34.5% Feb–Apr 2025
+  drawdown): strategy +26.86%, buy-and-hold 100 QQQ with idle cash +27.08%.
+  As built, the strategy is economically indistinguishable from owning one
+  unit of QQQ. This is the headline result and it should be resolved before
+  any further tuning.
 - **Engine A never actually accumulates.** In a twelve-month backtest the core
   stayed at exactly 1.00 units for all 251 sessions and there were zero
   assignments. Spreads are the only route to more shares, and the put engine
