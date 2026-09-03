@@ -175,6 +175,13 @@ class StrategyConfig:
     put_spread_contracts: int = field(
         default_factory=lambda: int(_rule("put_engine", "contracts_per_signal", 1))
     )
+    # How the protective leg is chosen when the 5-delta target does not fit
+    # the max-loss cap: "widest" takes the most premium the cap allows,
+    # "best_risk_reward" takes the best loss-to-profit ratio. They differ
+    # because risk/reward is U-shaped in width, not monotonic.
+    put_spread_leg_selection: str = field(
+        default_factory=lambda: str(_rule("put_engine", "protective_leg_selection", "widest"))
+    )
 
     # --- Call engine (§8) ---
     call_dte_range: tuple[int, int] = field(

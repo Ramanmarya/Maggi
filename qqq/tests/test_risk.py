@@ -13,9 +13,20 @@ from qqq.risk import RiskManager
 from qqq.state import CallPosition, PutSpreadPosition
 
 
+# ALGORITHM.md §9's published caps. Pinned rather than read from rules.json:
+# these tests check the gate arithmetic, and inheriting the operator's live
+# tuning makes them fail on a retune — a false alarm, not a regression. The
+# live values are sanity-checked separately in test_put_leg_selection.py.
+DOC_CAPS = {
+    "max_loss_per_spread_pct": 0.01,
+    "max_aggregate_put_risk_pct": 0.05,
+    "max_crash_stress_pct": 0.15,
+}
+
+
 def make_config(**overrides) -> StrategyConfig:
     base = StrategyConfig(alpaca_api_key="x", alpaca_secret_key="y")
-    for k, v in overrides.items():
+    for k, v in {**DOC_CAPS, **overrides}.items():
         object.__setattr__(base, k, v)
     return base
 

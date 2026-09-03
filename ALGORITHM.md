@@ -155,6 +155,29 @@ limit, both of which flip the kill switch. They are set deliberately wide
 because equity here includes the mark-to-market of a core position the
 strategy is designed to hold through corrections.
 
+### Risk/reward is U-shaped in width, and is close to the wrong metric here
+
+Measured on the 2026-09-03 chain, short leg 686p:
+
+| width | credit | max loss | R:R |
+|---|---|---|---|
+| 1 | $0.09 | $91 | 10.11:1 |
+| 4 | $0.51 | $349 | 6.84:1 |
+| **7** | $0.90 | $610 | **6.82:1** ← best |
+| 16 | $1.71 | $1,428 | 8.33:1 |
+| 26 | $2.39 | $2,361 | 9.88:1 |
+| 36 | $2.91 | $3,309 | 11.37:1 |
+
+Very narrow spreads collect too little against their width; very wide ones add
+width faster than credit. So raising the per-spread cap does not improve
+risk/reward — it *worsens* it, because the engine then selects a wider leg.
+
+Choosing the best-ratio leg instead of the widest also loses in backtest
+($130,326 vs $130,919). The reason is the 50% profit-capture exit: the
+position is closed long before either end of the ratio is reached, so the
+credit collected matters more than a max-loss-to-max-profit figure that is
+almost never realised.
+
 ### Position limits in practice
 
 The four gates interact to cap concurrent put spreads, and the binding one

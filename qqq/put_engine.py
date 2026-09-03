@@ -100,6 +100,18 @@ class PutSpreadEngine:
         fitting = [c for c in candidates if self._within_caps(short_leg, c, equity)]
         if not fitting:
             return None
+
+        if self._config.put_spread_leg_selection == "best_risk_reward":
+            # Risk/reward is U-shaped in width, not monotonic: very narrow
+            # spreads collect too little against their width, very wide ones
+            # add width faster than they add credit. The optimum sits in the
+            # middle, so "widest that fits" is not the same as "best odds".
+            def _rr(c):
+                econ = self._spread_economics(short_leg, c)
+                return econ[2] if econ else float("inf")
+
+            return min(fitting, key=_rr)
+
         return min(fitting, key=lambda c: c.strike)  # lowest strike = widest spread
 
     def propose_spread(

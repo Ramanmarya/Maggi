@@ -83,6 +83,8 @@ def _config(**kw) -> StrategyConfig:
     base = replace(
         StrategyConfig(alpaca_api_key="x", alpaca_secret_key="y"),
         put_spread_max_risk_reward_ratio=DOC_RISK_REWARD_CAP,
+        max_loss_per_spread_pct=0.01,          # §9's published per-spread cap
+        put_spread_leg_selection="widest",     # the mode these tests describe
     )
     return replace(base, **kw) if kw else base
 
