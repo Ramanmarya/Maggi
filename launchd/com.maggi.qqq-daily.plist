@@ -8,6 +8,10 @@
     <string>/Users/raman/Documents/Maggi/.venv/bin/python</string><string>-m</string><string>qqq.orchestrator</string>
     <string>--mode</string><string>daily</string>
   </array>
+  <key>EnvironmentVariables</key>
+  <dict><key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string></dict>
+  <key>ThrottleInterval</key><integer>60</integer>
+  <key>ExitTimeOut</key><integer>120</integer>
   <key>WorkingDirectory</key><string>/Users/raman/Documents/Maggi</string>
   <!-- 12:45 PT = 15:45 ET, 15 minutes ahead of the close (ALGORITHM.md 10).
        Weekdays only; the orchestrator additionally asks Alpaca's clock and

@@ -68,6 +68,7 @@ class DashboardData:
     position_count: int
     avg_effective: float | None
     state_updated: str | None
+    price_is_live: bool = False
     demo: bool = False
 
 
@@ -104,7 +105,26 @@ def load(demo: bool = False) -> DashboardData:
     core_units = float(state.get("core_units") or 0)
     excess_units = float(state.get("excess_units") or 0)
     reference = state.get("reference_price")
-    price = breaker.get("last_price") or reference
+
+    # Prefer a live quote so the header is not silently showing the stored
+    # reference and calling it the price. Falls back to state whenever the
+    # broker is unreachable or credentials are absent, and the caller is told
+    # which it got via `price_is_live`.
+    price, price_is_live = reference, False
+    core_value = core_pl = None
+    try:
+        from qqq.alpaca_adapter import AlpacaAdapter
+        from qqq.config import StrategyConfig as _SC
+
+        _cfg = _SC()
+        if _cfg.alpaca_api_key and _cfg.alpaca_secret_key:
+            _ad = AlpacaAdapter(_cfg)
+            price, price_is_live = _ad.get_underlying_price(), True
+            for _p in _ad.get_current_positions().positions:
+                if _p.symbol == _cfg.symbol and _p.asset_class == "equity":
+                    core_value, core_pl = _p.market_value, _p.unrealized_pl
+    except Exception:
+        pass
 
     core_children: list[Leg] = []
     for c in state.get("open_calls", []):
@@ -135,7 +155,10 @@ def load(demo: bool = False) -> DashboardData:
                         strike=reference,
                         secondary=price,
                         children=core_children,
-                        note=f"{core_units:.2f} core + {excess_units:.2f} excess units",
+                        note=(
+                            f"{core_units:.2f} core + {excess_units:.2f} excess units"
+                            + (f" · ${core_value:,.0f} · P&L ${core_pl:+,.2f}" if core_value is not None else "")
+                        ),
                     )
                 ],
             )
@@ -216,6 +239,7 @@ def load(demo: bool = False) -> DashboardData:
         position_count=sum(len(legs) + sum(len(l.children) for l in legs) for _, legs in groups),
         avg_effective=(sum(effectives) / len(effectives)) if effectives else None,
         state_updated=state.get("last_updated"),
+        price_is_live=price_is_live,
     )
 
 
@@ -266,5 +290,6 @@ def _demo_data() -> DashboardData:
         position_count=1 + 2 + 2 + 2,
         avg_effective=(629.85 + 635.10 + 576.38 + 564.56) / 4,
         state_updated=f"{today}T19:45:02+00:00",
+        price_is_live=False,
         demo=True,
     )

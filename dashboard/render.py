@@ -243,7 +243,7 @@ def render(d: DashboardData) -> str:
   <div class="ticker">
     <span class="dot live"></span><span class="sym">QQQ</span>
     <span class="px">{_money(d.price)}</span>
-    <span class="px-sub">{"ref " + _money(d.reference_price) if d.reference_price else ""}</span>
+    <span class="px-sub">{("live" if d.price_is_live else "last cycle")} &middot; {"ref " + _money(d.reference_price) if d.reference_price else ""}</span>
   </div>
 
   <nav class="tabs">

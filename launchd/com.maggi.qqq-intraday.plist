@@ -9,11 +9,27 @@
     <string>--mode</string><string>intraday</string>
   </array>
   <key>WorkingDirectory</key><string>/Users/raman/Documents/Maggi</string>
-  <!-- Every 15 min, around the clock. Cheap by design: the run exits
-       immediately when Alpaca's clock says the market is closed, so there is
-       no local market-calendar to drift out of date. Intraday passes are
-       defensive only and can never open a position (ALGORITHM.md 10). -->
-  <key>StartInterval</key><integer>900</integer>
+  <key>EnvironmentVariables</key>
+  <dict><key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string></dict>
+
+  <!-- StartCalendarInterval at :00/:15/:30/:45, NOT StartInterval.
+       StartInterval was silently pended on this machine ("pended nondemand
+       spawn = interval") and fired zero times in 80 minutes, with or without
+       RunAtLoad. StartCalendarInterval is the mechanism that demonstrably
+       works here. Same 15-minute cadence, on wall-clock boundaries. -->
+  <key>StartCalendarInterval</key>
+  <array>
+    <dict><key>Minute</key><integer>0</integer></dict>
+    <dict><key>Minute</key><integer>15</integer></dict>
+    <dict><key>Minute</key><integer>30</integer></dict>
+    <dict><key>Minute</key><integer>45</integer></dict>
+  </array>
+
+  <!-- The run exits in about a second when the market is closed, far under
+       launchd's 10s minimum runtime, which otherwise looks like crash-looping
+       and triggers backoff. -->
+  <key>ThrottleInterval</key><integer>60</integer>
+  <key>ExitTimeOut</key><integer>120</integer>
   <key>StandardOutPath</key><string>/Users/raman/Documents/Maggi/logs/qqq_intraday_launchd.log</string>
   <key>StandardErrorPath</key><string>/Users/raman/Documents/Maggi/logs/qqq_intraday_launchd.log</string>
   <key>RunAtLoad</key><false/>
