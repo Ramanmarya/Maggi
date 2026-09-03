@@ -67,7 +67,14 @@ class AcquisitionLadder:
         (§14): the next zone down is picked up on a later cycle rather than
         all at once.
         """
-        acquisition_zones = state.acquisition_ladder[1:]  # exclude reference itself
+        # zones[0] is the reference itself. ALGORITHM.md §5 excludes it — "at
+        # the highs" is Phase A, where the strategy waits rather than sells.
+        # The operator can opt into trading it; see config for the trade-off.
+        acquisition_zones = (
+            state.acquisition_ladder
+            if self._config.ladder_trade_at_reference
+            else state.acquisition_ladder[1:]
+        )
         candidates = [
             z for z in acquisition_zones if price <= z and z not in state.filled_zones
         ]

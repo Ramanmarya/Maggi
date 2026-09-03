@@ -13,12 +13,15 @@
     "atr_period_days": 20,
     "atr_multipliers": [
       0.0,
+      0.5,
       1.5,
       3.0,
       5.0
     ],
     "recenter_trigger_atr_mult": 0.5,
-    "_doc": "\u00a75. Multiplier 0.0 is the reference level itself \u2014 tracked for anti-clustering but never a buy zone. Recenter threshold of 0.5 ATR is the agreed starting value; the source doc left 'meaningful new high' open."
+    "_doc": "\u00a75. Multiplier 0.0 is the reference level itself \u2014 tracked for anti-clustering but never a buy zone. Recenter threshold of 0.5 ATR is the agreed starting value; the source doc left 'meaningful new high' open.",
+    "trade_at_reference": true,
+    "_trade_at_reference_note": "OPERATOR CHANGE 2026-09-03. DEVIATES FROM ALGORITHM.md 5, which excludes the reference level from the tradeable zones ('at the highs', Phase A). With this true the engine will sell put spreads at the highs instead of only into declines. Rationale: the operator judged the arm too reluctant - at 1.5x ATR the first zone needed a 1.61% drop, and no spread had ever been proposed. Consequence: premium is collected far more often, and entries are made at prices the ladder was designed to wait below, so a sustained decline is entered earlier and with less dry powder. Untested - no backtest exists. Set false to restore doc behaviour."
   },
   "regime": {
     "slope_lookback_days": 20,
@@ -26,15 +29,15 @@
     "_doc": "\u00a74. BULL = price > 200DMA and slope > band; DEFENSIVE = price < 200DMA and slope < -band; else NEUTRAL. flat_band 0.0 means no dead zone, matching the doc."
   },
   "exposure_curve": {
-    "_doc": "\u00a76. Target unit-equivalent exposure keyed to decline from reference. Explicitly a hypothesis to backtest, not a tuned constant. Linear-interpolated between points.",
+    "_doc": "ALGORITHM.md 6. Target unit-equivalent exposure keyed to decline from reference. OPERATOR CHANGE 2026-09-03: base lifted from 1.0 to 1.25 at the highs (whole curve +0.25) so the engine has genuine appetite above the core rather than sitting exactly at target and proposing nothing. The doc's original was 1.0/1.5/2.0/2.5/3.0/3.125/3.25. Still an untested hypothesis either way - the source doc labels this table as one.",
     "points": {
-      "0.00": 1.0,
-      "0.05": 1.5,
-      "0.10": 2.0,
-      "0.15": 2.5,
-      "0.20": 3.0,
-      "0.25": 3.125,
-      "0.30": 3.25
+      "0.00": 1.25,
+      "0.05": 1.75,
+      "0.10": 2.25,
+      "0.15": 2.75,
+      "0.20": 3.25,
+      "0.25": 3.375,
+      "0.30": 3.5
     }
   },
   "put_engine": {

@@ -125,6 +125,12 @@ class StrategyConfig:
     ladder_atr_multipliers: tuple[float, ...] = field(
         default_factory=lambda: tuple(_rule("ladder", "atr_multipliers", [0.0, 1.5, 3.0, 5.0]))
     )
+    # False keeps ALGORITHM.md 5 behaviour: the reference level marks "at the
+    # highs" and is not itself a buy zone. True lets the engine sell premium
+    # there. See rules.json:ladder._trade_at_reference_note.
+    ladder_trade_at_reference: bool = field(
+        default_factory=lambda: bool(_rule("ladder", "trade_at_reference", False))
+    )
 
     # --- Regime (§4) ---
     regime_slope_lookback_days: int = field(

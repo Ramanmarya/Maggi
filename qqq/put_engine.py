@@ -36,10 +36,51 @@ class PutSpreadEngine:
         target = -self._config.put_spread_short_delta_target  # puts have negative delta
         return min(puts, key=lambda c: abs(c.delta - target))
 
+    def _spread_economics(
+        self, short_leg: OptionContract, long_leg: OptionContract
+    ) -> tuple[float, float, float] | None:
+        """Return (net_credit, max_loss, risk_reward) or None if there is no credit."""
+        credit = (short_leg.bid + short_leg.ask) / 2 - (long_leg.bid + long_leg.ask) / 2
+        if credit <= 0:
+            return None
+        unit = self._config.core_unit_shares
+        width = short_leg.strike - long_leg.strike
+        max_loss = width * unit - credit * unit
+        max_profit = credit * unit
+        if max_profit <= 0:
+            return None
+        return credit, max_loss, max_loss / max_profit
+
+    def _within_caps(
+        self, short_leg: OptionContract, long_leg: OptionContract, equity: float
+    ) -> bool:
+        econ = self._spread_economics(short_leg, long_leg)
+        if econ is None:
+            return False
+        _, max_loss, risk_reward = econ
+        if max_loss > equity * self._config.max_loss_per_spread_pct:
+            return False
+        rr_cap = self._config.put_spread_max_risk_reward_ratio
+        return rr_cap is None or risk_reward <= rr_cap
+
     def _select_long_leg(
-        self, chain: list[OptionContract], short_leg: OptionContract
+        self, chain: list[OptionContract], short_leg: OptionContract, equity: float | None = None
     ) -> OptionContract | None:
-        """§9: protective put ~5 delta, same expiry, strike below the short leg."""
+        """§7: protective put at ~5 delta, "or a strike necessary to satisfy the
+        maximum-loss rule".
+
+        Only the first half used to be implemented, which made the engine
+        unusable on QQQ: at ~$717 the 5-delta strike sits ~56 points below the
+        20-delta short, so every proposal was a $5,600-wide spread whose max
+        loss was several times the per-spread cap, and the risk manager
+        refused all of them. Selecting purely on delta ignores that spread
+        width — and therefore max loss — scales with the underlying's price.
+
+        So: take the 5-delta leg when it fits the caps, otherwise take the
+        WIDEST leg that does. Widest, not narrowest, because within a fixed
+        max-loss budget a wider spread collects more premium; narrowing past
+        that just gives up credit for risk the cap already bounds.
+        """
         candidates = [
             c
             for c in chain
@@ -50,8 +91,16 @@ class PutSpreadEngine:
         ]
         if not candidates:
             return None
+
         target = -self._config.put_spread_protective_delta_target
-        return min(candidates, key=lambda c: abs(c.delta - target))
+        by_delta = min(candidates, key=lambda c: abs(c.delta - target))
+        if equity is None or self._within_caps(short_leg, by_delta, equity):
+            return by_delta
+
+        fitting = [c for c in candidates if self._within_caps(short_leg, c, equity)]
+        if not fitting:
+            return None
+        return min(fitting, key=lambda c: c.strike)  # lowest strike = widest spread
 
     def propose_spread(
         self, state: PortfolioState, equity: float
@@ -60,7 +109,7 @@ class PutSpreadEngine:
         short_leg = self._select_short_leg(chain)
         if short_leg is None:
             return None
-        long_leg = self._select_long_leg(chain, short_leg)
+        long_leg = self._select_long_leg(chain, short_leg, equity)
         if long_leg is None:
             return None
 
