@@ -104,6 +104,15 @@ class BrokerAdapter(Protocol):
 
     def get_option_chain(self, dte_range: tuple[int, int]) -> list[OptionContract]: ...
 
+    def option_delta(self, symbol: str) -> float | None:
+        """Per-contract delta for one option, or None if unavailable.
+
+        Needed because option exposure cannot be inferred from contract count:
+        a short 20-delta put is bullish, not equivalent to being short 100
+        shares.
+        """
+        ...
+
     def option_mark(self, symbol: str) -> float | None:
         """Current mid for one contract, or None if unavailable.
 

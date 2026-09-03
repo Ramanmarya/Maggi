@@ -137,6 +137,12 @@ class StrategyConfig:
     ladder_zone_rearm_days: int = field(
         default_factory=lambda: int(_rule("ladder", "zone_rearm_days", 0))
     )
+    # Shares bought outright each time a ladder zone fires below target.
+    # 0 disables accumulation entirely, which is the behaviour every backtest
+    # up to now measured. See rules.json for why assignment cannot do this job.
+    ladder_accumulate_shares_per_zone: int = field(
+        default_factory=lambda: int(_rule("ladder", "accumulate_shares_per_zone", 0))
+    )
 
     # --- Regime (§4) ---
     regime_slope_lookback_days: int = field(
@@ -166,6 +172,9 @@ class StrategyConfig:
         default_factory=lambda: _rule("put_engine", "profit_capture_pct", 0.60)
     )
     put_spread_close_dte: int = field(default_factory=lambda: _rule("put_engine", "close_dte", 3))
+    put_spread_contracts: int = field(
+        default_factory=lambda: int(_rule("put_engine", "contracts_per_signal", 1))
+    )
 
     # --- Call engine (§8) ---
     call_dte_range: tuple[int, int] = field(

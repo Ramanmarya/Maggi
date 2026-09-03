@@ -109,6 +109,13 @@ class StrategyCycle:
         if zone is not None and should_add_exposure(
             self._config, state.reference_price, price, total_delta
         ):
+            # Accumulate inventory by BUYING SHARES, not by waiting for
+            # assignment. A defined-risk spread assigns the short leg and
+            # exercises the long leg for a net of zero shares, so §7's
+            # instrument can never deliver the inventory §3 calls for.
+            # Buying outright keeps the spreads defined-risk and still gets
+            # the accumulation the exposure curve is built around.
+            state = self._accumulate_shares(state, snapshot, price, target_exposure, total_delta)
             order = self._puts.propose_spread(state, equity)
             if order is not None:
                 state = self._puts.submit(state, order)
@@ -116,10 +123,19 @@ class StrategyCycle:
         state = self._puts.manage_existing(state, today)
 
         # 6. Call engine pass
-        # excess_units should reflect (current unit-equivalent holdings - core target);
-        # this is a placeholder wiring until DeltaAggregator distinguishes
-        # share-unit holdings from option-delta contributions cleanly.
-        state.excess_units = max(0.0, total_delta - state.core_units)
+        # Excess inventory is SHARES beyond the core, never total delta.
+        # Engine C writes calls against it, and a call is only covered by
+        # stock — put-spread delta cannot deliver shares if the call is
+        # exercised. Deriving this from total_delta let +0.15 of spread delta
+        # read as coverage and permitted a genuinely naked call, which §8
+        # forbids outright.
+        held_shares = sum(
+            p.qty for p in snapshot.positions
+            if p.asset_class == "equity" and p.symbol == self._config.symbol
+        )
+        state.excess_units = max(
+            0.0, held_shares / self._config.core_unit_shares - state.core_units
+        )
         call_order = self._calls.propose_call(state, equity)
         if call_order is not None:
             state = self._calls.submit(state, call_order)
@@ -134,6 +150,61 @@ class StrategyCycle:
 
         # 8. Persist state
         self._save(state)
+        return state
+
+    def _accumulate_shares(
+        self, state: PortfolioState, snapshot, price: float,
+        target_units: float, held_units: float,
+    ) -> PortfolioState:
+        """Buy toward the target exposure curve, bounded three ways.
+
+        By the shortfall (never overshoot the curve), by a per-fire cap (§5's
+        gradual intent — a zone touch should add a slice, not the whole gap),
+        and by settled cash. The crash-stress gate is then re-run against the
+        larger share position and the purchase abandoned if it would breach:
+        shares carry uncapped downside, so this is the one gate that sees the
+        true risk of accumulating.
+        """
+        per_fire = self._config.ladder_accumulate_shares_per_zone
+        if per_fire <= 0:
+            return state
+
+        unit = self._config.core_unit_shares
+        shortfall = int((target_units - held_units) * unit)
+        if shortfall < 1:
+            return state
+
+        held_shares = sum(
+            p.qty for p in snapshot.positions
+            if p.asset_class == "equity" and p.symbol == self._config.symbol
+        )
+        affordable = int(snapshot.cash // price) if price > 0 else 0
+        qty = min(shortfall, per_fire, affordable)
+        if qty < 1:
+            logger.info(
+                "Accumulation skipped: want %d shares, cash affords %d.", min(shortfall, per_fire), affordable
+            )
+            return state
+
+        stress = self._risk.check_crash_stress(
+            price, state.open_put_spreads, state.open_calls,
+            (held_shares + qty) / unit, self._risk_equity(snapshot.equity),
+        )
+        if not stress.passed:
+            logger.info("Accumulation refused by crash-stress: %s", stress.reason)
+            return state
+
+        order = SingleLegOrder(
+            contract=None, symbol=self._config.symbol, side="buy", qty=qty,
+            order_type="market", limit_price=None,
+            client_order_id=f"accum-{uuid.uuid4().hex[:10]}",
+        )
+        result = self._broker.submit_single_leg(order)
+        if result.success:
+            logger.info(
+                "Accumulated %d shares at ~%.2f (held %.0f -> %.0f, target %.2f units)",
+                qty, price, held_shares, held_shares + qty, target_units,
+            )
         return state
 
     def _ensure_core_position(self, state: PortfolioState, snapshot, price: float) -> PortfolioState:

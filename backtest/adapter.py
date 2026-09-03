@@ -101,6 +101,25 @@ class BacktestBroker:
             )
         return out
 
+    def option_delta(self, symbol: str) -> float | None:
+        """Back the delta out of the day's close, same route the chain uses."""
+        from qqq.black_scholes import bs_delta, implied_vol
+
+        mark = self.option_mark(symbol)
+        if mark is None or mark <= 0:
+            return None
+        try:
+            expiry, kind, strike = parse_occ(symbol)
+        except (ValueError, IndexError):
+            return None
+        years = max((expiry - self._as_of).days, 1) / 365.0
+        spot = self.get_underlying_price()
+        r, q = self._config.backtest_risk_free_rate, self._config.backtest_dividend_yield_estimate
+        iv = implied_vol(mark, spot, strike, years, r, q, kind)
+        if iv is None:
+            return None
+        return bs_delta(spot, strike, years, r, q, iv, kind)
+
     def option_mark(self, symbol: str) -> float | None:
         self._data.load_option_bars([symbol], self._as_of - timedelta(days=3), self._as_of)
         bar = self._data.cache.bar_on(symbol, self._as_of)

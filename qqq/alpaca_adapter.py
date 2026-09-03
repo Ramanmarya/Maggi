@@ -178,6 +178,21 @@ class AlpacaAdapter:
             )
         return out
 
+    def option_delta(self, symbol: str) -> float | None:
+        """Alpaca's option snapshot carries greeks; None on any failure so the
+        aggregator degrades rather than crashing the cycle."""
+        try:
+            from alpaca.data.requests import OptionSnapshotRequest
+
+            snap = self._option_data.get_option_snapshot(
+                OptionSnapshotRequest(symbol_or_symbols=symbol)
+            )[symbol]
+            greeks = getattr(snap, "greeks", None)
+            return float(greeks.delta) if greeks and greeks.delta is not None else None
+        except Exception:
+            logger.warning("option_delta unavailable for %s", symbol)
+            return None
+
     def option_mark(self, symbol: str) -> float | None:
         """Latest mid for one contract. None on any failure, so a data gap
         degrades to the time-based exit rather than crashing the cycle."""

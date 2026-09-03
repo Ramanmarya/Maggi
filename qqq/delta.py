@@ -18,17 +18,31 @@ class DeltaAggregator:
         self._config = config
 
     def total_unit_delta(self, snapshot: PortfolioSnapshot) -> float:
+        """Portfolio delta in unit-equivalents (1 unit = core_unit_shares).
+
+        Options are weighted by their actual delta, not their contract count.
+        The previous version added `pos.qty` directly, which scored a short
+        20-delta put — a bullish position worth about +0.20 units — as -1.00
+        units, the same as being short 100 shares. Sign and magnitude both
+        wrong. Put spreads happened to cancel the error (short -1 plus long +1
+        summing to zero), which is why it never showed up in results while the
+        strategy traded nothing else.
+
+        A contract's delta is per share, and a contract covers unit_size
+        shares, so its contribution in units is simply qty * delta.
+        """
         unit_size = self._config.core_unit_shares
         total = 0.0
         for pos in snapshot.positions:
             if pos.asset_class == "equity":
                 total += pos.qty / unit_size
             elif pos.asset_class == "option":
-                # NOTE: this assumes `qty` already reflects contract count
-                # (negative = short). Actual option delta weighting requires
-                # per-contract greeks from the option chain, not just qty —
-                # a full implementation should fetch live delta per open
-                # contract and multiply by qty here rather than treating
-                # every option leg as delta = 1 per contract.
-                total += pos.qty
+                delta = self._broker.option_delta(pos.symbol)
+                if delta is None:
+                    # Unknown greek: contribute nothing rather than invent a
+                    # number. Understating exposure is the safer failure here —
+                    # it can only make the engine more willing to add, which
+                    # the risk gates still bound.
+                    continue
+                total += pos.qty * delta
         return total

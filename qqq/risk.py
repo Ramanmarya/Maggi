@@ -128,10 +128,17 @@ class RiskManager:
         return RiskCheckResult(True)
 
     def check_call_coverage(
-        self, open_calls: list[CallPosition], excess_units: float
+        self, open_calls: list[CallPosition], excess_units: float, proposing: int = 0
     ) -> RiskCheckResult:
-        """No naked calls, ever: short call contracts must not exceed excess units."""
+        """No naked calls, ever: short call contracts must not exceed excess units.
+
+        `proposing` is the contract count about to be written. It has to be
+        included: counting only positions already open always permits one more
+        contract than coverage allows, which is a naked call whenever excess
+        inventory is below one unit.
+        """
         open_call_contracts = sum(c.contracts for c in open_calls if c.status == "OPEN")
+        open_call_contracts += max(0, proposing)
         if open_call_contracts > excess_units:
             return RiskCheckResult(
                 False,
@@ -173,10 +180,11 @@ class RiskManager:
         open_spreads: list[PutSpreadPosition],
         core_units: float,
         equity: float,
+        proposing: int = 1,
     ) -> RiskCheckResult:
         """Convenience wrapper: run every gate relevant to opening a new short call."""
         checks = [
-            self.check_call_coverage(open_calls, excess_units),
+            self.check_call_coverage(open_calls, excess_units, proposing),
             self.check_crash_stress(underlying_price, open_spreads, open_calls, core_units, equity),
         ]
         for result in checks:

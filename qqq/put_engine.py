@@ -131,8 +131,10 @@ class PutSpreadEngine:
         ):
             return None
 
-        contracts = 1  # V5 doc doesn't specify multi-contract sizing beyond the risk caps;
-        # RiskManager enforces the per-spread and aggregate % equity caps regardless of count.
+        # §11 left sizing open. The count is configurable; RiskManager enforces
+        # the per-spread and aggregate caps regardless of it, so a size that is
+        # too large is refused rather than silently taken.
+        contracts = max(1, self._config.put_spread_contracts)
 
         check = self._risk.check_all_for_new_put_spread(
             short_strike=short_leg.strike,

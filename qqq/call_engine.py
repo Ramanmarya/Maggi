@@ -132,6 +132,7 @@ class HybridCallEngine:
             open_spreads=state.open_put_spreads,
             core_units=state.core_units,
             equity=equity,
+            proposing=contracts,
         )
         if not check.passed:
             return None

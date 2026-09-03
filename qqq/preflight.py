@@ -90,6 +90,9 @@ class StubBroker:
                 )
         return out
 
+    def option_delta(self, symbol: str) -> float | None:
+        return -0.20 if symbol[-9] == 'P' else 0.20
+
     def option_mark(self, symbol: str) -> float | None:
         return None
 

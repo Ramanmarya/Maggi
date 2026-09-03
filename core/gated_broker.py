@@ -53,6 +53,9 @@ class GatedBroker:
     def get_option_chain(self, dte_range: tuple[int, int]):
         return self._inner.get_option_chain(dte_range)
 
+    def option_delta(self, symbol: str):
+        return self._inner.option_delta(symbol)
+
     def option_mark(self, symbol: str):
         return self._inner.option_mark(symbol)
 
