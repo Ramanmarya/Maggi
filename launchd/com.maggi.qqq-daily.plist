@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.maggi.qqq-daily</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/opt/homebrew/bin/python3</string><string>-m</string><string>qqq.orchestrator</string>
+    <string>--mode</string><string>daily</string>
+  </array>
+  <key>WorkingDirectory</key><string>/Users/raman/Documents/Maggi</string>
+  <!-- 12:45 PT = 15:45 ET, 15 minutes ahead of the close (ALGORITHM.md 10).
+       Weekdays only; the orchestrator additionally asks Alpaca's clock and
+       exits cleanly on holidays and early closes. -->
+  <key>StartCalendarInterval</key>
+  <array>
+    <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>12</integer><key>Minute</key><integer>45</integer></dict>
+    <dict><key>Weekday</key><integer>2</integer><key>Hour</key><integer>12</integer><key>Minute</key><integer>45</integer></dict>
+    <dict><key>Weekday</key><integer>3</integer><key>Hour</key><integer>12</integer><key>Minute</key><integer>45</integer></dict>
+    <dict><key>Weekday</key><integer>4</integer><key>Hour</key><integer>12</integer><key>Minute</key><integer>45</integer></dict>
+    <dict><key>Weekday</key><integer>5</integer><key>Hour</key><integer>12</integer><key>Minute</key><integer>45</integer></dict>
+  </array>
+  <key>StandardOutPath</key><string>/Users/raman/Documents/Maggi/logs/qqq_daily_launchd.log</string>
+  <key>StandardErrorPath</key><string>/Users/raman/Documents/Maggi/logs/qqq_daily_launchd.log</string>
+  <key>RunAtLoad</key><false/>
+</dict>
+</plist>

@@ -1,0 +1,15 @@
+# Live trading
+alpaca-py>=0.33.0
+requests>=2.32.0
+tenacity>=9.0.0
+
+# Backtest
+pandas>=2.2.0
+numpy>=1.26.0
+
+# Dev
+pytest>=8.3.0
+
+# NOTE: no apscheduler and no python-dotenv. Scheduling is launchd's job
+# (see launchd/), and .env parsing is stdlib in qqq/config.py so the
+# pure-logic modules unit-test with zero third-party packages installed.

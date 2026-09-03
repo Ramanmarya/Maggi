@@ -1,0 +1,7 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {"name": "maggi-dashboard-demo", "runtimeExecutable": "python3",
+     "runtimeArgs": ["-m", "dashboard.server", "--demo", "--port", "8787"], "port": 8787}
+  ]
+}

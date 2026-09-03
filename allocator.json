@@ -1,0 +1,23 @@
+{
+  "_doc": "Capital allocation and phase for every arm. OPERATOR-ONLY — no code path in this repo may write this file. The phase field is the gate that decides whether orders may reach the broker at all; see core/kill_switch.py.",
+  "total_capital": 100000,
+  "allocations": {
+    "qqq": {
+      "pct": 0,
+      "target_pct": 100,
+      "active": true,
+      "phase": "design",
+      "phase_notes": "Fresh build. Starts at design ($0, no orders) per the phase ladder. Promote to scanner_only only after the fire test passes and the placeholders in ALGORITHM.md §11 are closed.",
+      "description": "QQQ drift-harvest: structurally long Nasdaq via QQQ shares, put credit spreads to get paid waiting to buy lower, hybrid calls to monetize excess inventory higher."
+    }
+  },
+  "phase_ladder": {
+    "_doc": "Ordered phases. Capital and order permissions per phase.",
+    "design": {"capital": 0, "orders": false},
+    "scanner_only": {"capital": 0, "orders": false},
+    "paper": {"capital": "up to pct", "orders": "paper account only"},
+    "tiny_live": {"capital": "up to pct", "orders": "real money, $300/order cap"},
+    "live": {"capital": "up to pct", "orders": "full size"},
+    "killed": {"capital": 0, "orders": false}
+  }
+}

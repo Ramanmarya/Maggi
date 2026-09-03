@@ -1,0 +1,144 @@
+"""
+PutSpreadEngine — proposes and manages put credit spreads.
+
+V5 doc §8-13:
+  - DTE 21-35, short put 15-25 delta (default 20), protective put ~5 delta
+    "OR a strike necessary to satisfy the maximum-loss rule" — implemented
+    below as: try the 5-delta protective leg first; RiskManager (the single
+    source of truth for the max-loss gate) rejects the trade if it still
+    violates the cap rather than this engine silently widening the spread,
+    per the doc's "NO OVERRIDE" language in §10.
+  - §12: reject trades with a poor risk/reward ratio (max_loss/max_profit)
+    even if premium looks attractive on its own.
+"""
+
+from __future__ import annotations
+
+import uuid
+from datetime import date, datetime, timezone
+
+from .broker_adapter import BrokerAdapter, OptionContract, VerticalSpreadOrder
+from .config import StrategyConfig
+from .risk import RiskManager
+from .state import PortfolioState, PutSpreadPosition
+
+
+class PutSpreadEngine:
+    def __init__(self, broker: BrokerAdapter, config: StrategyConfig, risk: RiskManager):
+        self._broker = broker
+        self._config = config
+        self._risk = risk
+
+    def _select_short_leg(self, chain: list[OptionContract]) -> OptionContract | None:
+        puts = [c for c in chain if c.option_type == "put" and c.delta is not None]
+        if not puts:
+            return None
+        target = -self._config.put_spread_short_delta_target  # puts have negative delta
+        return min(puts, key=lambda c: abs(c.delta - target))
+
+    def _select_long_leg(
+        self, chain: list[OptionContract], short_leg: OptionContract
+    ) -> OptionContract | None:
+        """§9: protective put ~5 delta, same expiry, strike below the short leg."""
+        candidates = [
+            c
+            for c in chain
+            if c.option_type == "put"
+            and c.expiry == short_leg.expiry
+            and c.delta is not None
+            and c.strike < short_leg.strike
+        ]
+        if not candidates:
+            return None
+        target = -self._config.put_spread_protective_delta_target
+        return min(candidates, key=lambda c: abs(c.delta - target))
+
+    def propose_spread(
+        self, state: PortfolioState, equity: float
+    ) -> VerticalSpreadOrder | None:
+        chain = self._broker.get_option_chain(self._config.put_spread_dte_range)
+        short_leg = self._select_short_leg(chain)
+        if short_leg is None:
+            return None
+        long_leg = self._select_long_leg(chain, short_leg)
+        if long_leg is None:
+            return None
+
+        net_credit = (short_leg.bid + short_leg.ask) / 2 - (long_leg.bid + long_leg.ask) / 2
+        if net_credit <= 0:
+            return None  # never pay to open a "credit" spread
+
+        # §12: risk/reward quality filter (max_loss / max_profit).
+        width = short_leg.strike - long_leg.strike
+        unit = self._config.core_unit_shares
+        max_loss = width * unit - net_credit * unit
+        max_profit = net_credit * unit
+        if max_profit <= 0:
+            return None
+        risk_reward = max_loss / max_profit
+        if (
+            self._config.put_spread_max_risk_reward_ratio is not None
+            and risk_reward > self._config.put_spread_max_risk_reward_ratio
+        ):
+            return None
+
+        contracts = 1  # V5 doc doesn't specify multi-contract sizing beyond the risk caps;
+        # RiskManager enforces the per-spread and aggregate % equity caps regardless of count.
+
+        check = self._risk.check_all_for_new_put_spread(
+            short_strike=short_leg.strike,
+            long_strike=long_leg.strike,
+            net_credit=net_credit,
+            contracts=contracts,
+            equity=equity,
+            existing_open_spreads=state.open_put_spreads,
+            underlying_price=self._broker.get_underlying_price(),
+            core_units=state.core_units,
+            open_calls=state.open_calls,
+        )
+        if not check.passed:
+            return None
+
+        return VerticalSpreadOrder(
+            underlying=self._config.symbol,
+            short_leg=short_leg,
+            long_leg=long_leg,
+            contracts=contracts,
+            limit_net_credit=round(net_credit * 0.95, 2),  # small haircut off mid for fill odds
+            client_order_id=f"put-spread-{uuid.uuid4().hex[:10]}",
+        )
+
+    def submit(self, state: PortfolioState, order: VerticalSpreadOrder) -> PortfolioState:
+        result = self._broker.submit_vertical_spread(order)
+        if result.success:
+            state.open_put_spreads.append(
+                PutSpreadPosition(
+                    id=result.order_id or order.client_order_id,
+                    short_strike=order.short_leg.strike,
+                    long_strike=order.long_leg.strike,
+                    expiry=order.short_leg.expiry.isoformat(),
+                    contracts=order.contracts,
+                    net_credit=order.limit_net_credit or 0.0,
+                    opened_at=datetime.now(timezone.utc).isoformat(),
+                )
+            )
+        return state
+
+    def manage_existing(self, state: PortfolioState, today: date) -> PortfolioState:
+        """Close at profit-capture target or inside the force-close DTE window."""
+        for spread in state.open_put_spreads:
+            if spread.status != "OPEN":
+                continue
+            expiry = date.fromisoformat(spread.expiry)
+            dte = (expiry - today).days
+            if dte <= self._config.put_spread_close_dte:
+                result = self._broker.close_position(spread.id, limit_pct=None)
+                if result.success:
+                    spread.status = "CLOSED"
+                    spread.close_price = result.filled_avg_price
+                    spread.closed_at = datetime.now(timezone.utc).isoformat()
+            # TODO(V5-PARAM): profit-capture check needs the spread's *current*
+            # mark (not just entry credit) from the broker adapter to compare
+            # against put_spread_profit_capture_pct — wire this once
+            # get_option_chain / a position-mark lookup is available per-leg.
+        return state

@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.maggi.qqq-intraday</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/opt/homebrew/bin/python3</string><string>-m</string><string>qqq.orchestrator</string>
+    <string>--mode</string><string>intraday</string>
+  </array>
+  <key>WorkingDirectory</key><string>/Users/raman/Documents/Maggi</string>
+  <!-- Every 15 min, around the clock. Cheap by design: the run exits
+       immediately when Alpaca's clock says the market is closed, so there is
+       no local market-calendar to drift out of date. Intraday passes are
+       defensive only and can never open a position (ALGORITHM.md 10). -->
+  <key>StartInterval</key><integer>900</integer>
+  <key>StandardOutPath</key><string>/Users/raman/Documents/Maggi/logs/qqq_intraday_launchd.log</string>
+  <key>StandardErrorPath</key><string>/Users/raman/Documents/Maggi/logs/qqq_intraday_launchd.log</string>
+  <key>RunAtLoad</key><false/>
+</dict>
+</plist>

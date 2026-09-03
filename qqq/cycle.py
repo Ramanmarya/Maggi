@@ -1,0 +1,132 @@
+"""
+StrategyCycle — wires every engine together into the decision cycle from
+the architecture doc §6. Two entrypoints:
+
+  run_daily_cycle()    — full 8-step cycle (regime, ladder, put/call
+                          proposals, risk gating, submission, persistence)
+  run_intraday_check() — lightweight: crash-stress re-check + ex-div/
+                          assignment monitoring only. Never opens new
+                          positions. This is what makes "daily + intraday"
+                          cadence safe: intraday passes can only defend,
+                          never add exposure.
+"""
+
+from __future__ import annotations
+
+import logging
+from datetime import date
+
+from .broker_adapter import BrokerAdapter
+from .call_engine import HybridCallEngine
+from .config import StrategyConfig
+from .delta import DeltaAggregator
+from .exposure_curve import decline_from_reference, should_add_exposure, target_units_for_decline
+from .ladder import AcquisitionLadder
+from .put_engine import PutSpreadEngine
+from .regime import RegimeEngine
+from .risk import RiskManager
+from .state import PortfolioState, load_state, save_state
+
+logger = logging.getLogger("qqq_bot.cycle")
+
+
+class StrategyCycle:
+    def __init__(self, broker: BrokerAdapter, config: StrategyConfig):
+        self._broker = broker
+        self._config = config
+        self._risk = RiskManager(config)
+        self._regime = RegimeEngine(broker, config)
+        self._ladder = AcquisitionLadder(broker, config)
+        self._delta = DeltaAggregator(broker, config)
+        self._puts = PutSpreadEngine(broker, config, self._risk)
+        self._calls = HybridCallEngine(broker, config, self._risk)
+
+    def _load(self) -> PortfolioState:
+        return load_state(self._config.state_file_path)
+
+    def _save(self, state: PortfolioState) -> None:
+        save_state(state, self._config.state_file_path)
+
+    def run_daily_cycle(self) -> PortfolioState:
+        state = self._load()
+        today = date.today()
+
+        # 1. Pull market data
+        price = self._broker.get_underlying_price()
+        atr = self._broker.get_atr()
+        snapshot = self._broker.get_current_positions()
+        equity = snapshot.equity
+
+        # 2. Update regime
+        state.current_regime = self._regime.current_regime()
+        logger.info("Regime: %s | price=%.2f | equity=%.2f", state.current_regime, price, equity)
+
+        # 3. Recompute total portfolio delta
+        total_delta = self._delta.total_unit_delta(snapshot)
+        logger.info("Total unit-equivalent delta: %.3f", total_delta)
+
+        # 4. Ladder check / recenter
+        state = self._ladder.maybe_recenter(state, price, atr)
+        zone = self._ladder.unused_zone_at_or_below(state, price)
+
+        # 5. Put engine pass
+        # V5 doc §17: reaching an unused zone does NOT automatically mean
+        # adding exposure — only propose a new spread if current total delta
+        # is below the §15 target-exposure curve for the current decline.
+        decline = decline_from_reference(state.reference_price, price)
+        target_exposure = target_units_for_decline(self._config, decline)
+        logger.info(
+            "Decline from reference: %.1f%% | target exposure: %.2f units | current: %.2f units",
+            decline * 100, target_exposure, total_delta,
+        )
+        if zone is not None and should_add_exposure(
+            self._config, state.reference_price, price, total_delta
+        ):
+            order = self._puts.propose_spread(state, equity)
+            if order is not None:
+                state = self._puts.submit(state, order)
+                state = self._ladder.mark_zone_filled(state, zone)
+        state = self._puts.manage_existing(state, today)
+
+        # 6. Call engine pass
+        # excess_units should reflect (current unit-equivalent holdings - core target);
+        # this is a placeholder wiring until DeltaAggregator distinguishes
+        # share-unit holdings from option-delta contributions cleanly.
+        state.excess_units = max(0.0, total_delta - state.core_units)
+        call_order = self._calls.propose_call(state, equity)
+        if call_order is not None:
+            state = self._calls.submit(state, call_order)
+        state = self._calls.manage_existing(state, today)
+
+        # 7. Portfolio crash-stress test (defensive re-check before persisting)
+        stress = self._risk.check_crash_stress(
+            price, state.open_put_spreads, state.open_calls, state.core_units, equity
+        )
+        if not stress.passed:
+            logger.warning("Crash-stress cap breached at end of cycle: %s", stress.reason)
+
+        # 8. Persist state
+        self._save(state)
+        return state
+
+    def run_intraday_check(self) -> PortfolioState:
+        """Defensive-only pass: no new positions, ever."""
+        state = self._load()
+        today = date.today()
+        price = self._broker.get_underlying_price()
+        snapshot = self._broker.get_current_positions()
+        equity = snapshot.equity
+
+        stress = self._risk.check_crash_stress(
+            price, state.open_put_spreads, state.open_calls, state.core_units, equity
+        )
+        if not stress.passed:
+            logger.warning("INTRADAY crash-stress cap breached: %s", stress.reason)
+            # TODO(V5-PARAM): define the defensive action here (e.g. close
+            # the riskiest open spread) — currently just logs.
+
+        # Re-check ex-div safety on open calls (assignment risk monitoring)
+        state = self._calls.manage_existing(state, today)
+
+        self._save(state)
+        return state
