@@ -195,7 +195,23 @@ Implementation: `qqq/cycle.py`, driven one-shot by `qqq/orchestrator.py`.
 - **`get_dividend_calendar` on the live Alpaca adapter returns `[]`**, so the
   ex-div safety check passes trivially. Do not sell calls live until this is
   wired (Polygon's dividends endpoint already works in the backtest adapter).
-- **The ladder exhausts itself in a sustained decline.** §5's anti-clustering
+- **Zone exhaustion in a decline is a FEATURE, not a defect** (tested
+  2026-09-03). The engine writes nothing through a sustained fall because §5
+  spends each zone once per reset and only recenters on a new high. That
+  looked like a bug — at the 2025-04-08 trough all 5 zones were filled, the
+  curve wanted 3.32 units and it held 1.00. Letting zones re-arm on a cooldown
+  fixes the *behaviour* (0 spreads in the Feb–May 2025 fall becomes 54 at a
+  5-day cooldown) and makes the *results worse*: return falls 28.15% → 27.20%
+  and max drawdown roughly doubles, 12.04% → 25.38%, Sharpe 0.90 → 0.61. A
+  21-day cooldown recovers most of it but still trails. Selling puts into a
+  falling market writes contracts that then go in-the-money. Kept at 0.
+- **The real defect was zone ordering, now fixed.** `unused_zone_at_or_below`
+  returned `min(candidates)` — zones are prices, so that is the *deepest*
+  zone, contradicting its own docstring and §5's gradual intent. Correcting it
+  to the shallowest zone moved the option overlay from **−$218 to +$1,283**
+  over the same 626 sessions, and the strategy from behind buy-and-hold to
+  modestly ahead ($128,148 vs $127,080).
+- ~~**The ladder exhausts itself in a sustained decline.**~~ §5's anti-clustering
   rule allows each zone once per reset, and §5's recenter only fires on a new
   high. In a one-directional fall those combine badly: every zone is consumed
   in the first few percent, and the engine then does nothing for the rest of
