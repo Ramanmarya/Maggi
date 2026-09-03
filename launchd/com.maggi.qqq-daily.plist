@@ -5,7 +5,7 @@
   <key>Label</key><string>com.maggi.qqq-daily</string>
   <key>ProgramArguments</key>
   <array>
-    <string>/opt/homebrew/bin/python3</string><string>-m</string><string>qqq.orchestrator</string>
+    <string>/Users/raman/Documents/Maggi/.venv/bin/python</string><string>-m</string><string>qqq.orchestrator</string>
     <string>--mode</string><string>daily</string>
   </array>
   <key>WorkingDirectory</key><string>/Users/raman/Documents/Maggi</string>

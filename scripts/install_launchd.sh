@@ -24,5 +24,8 @@ for f in "$HERE"/launchd/*.plist; do
   echo "loaded $label"
 done
 echo
-echo "Loaded. Note: the arm is in phase=$(python3 -c "import json;print(json.load(open('$HERE/allocator.json'))['allocations']['qqq']['phase'])") —"
-echo "orchestrator will run the full path but the order gate blocks submission."
+PHASE=$(python3 -c "import json;print(json.load(open('$HERE/allocator.json'))['allocations']['qqq']['phase'])")
+case "$PHASE" in
+  paper|tiny_live|live) echo "Loaded. Phase=$PHASE — the order gate is OPEN and scheduled cycles CAN place orders." ;;
+  *)                    echo "Loaded. Phase=$PHASE — cycles run the full path but the order gate blocks submission." ;;
+esac

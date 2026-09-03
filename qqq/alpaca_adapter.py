@@ -68,14 +68,19 @@ class AlpacaAdapter:
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=1, max=8))
     def get_underlying_price(self) -> float:
+        from alpaca.data.enums import DataFeed
         from alpaca.data.requests import StockLatestTradeRequest
 
-        req = StockLatestTradeRequest(symbol_or_symbols=self._config.symbol)
+        # IEX, not SIP: the free data plan rejects recent SIP queries with
+        # 'subscription does not permit querying recent SIP data' rather than
+        # falling back, so the feed has to be named explicitly.
+        req = StockLatestTradeRequest(symbol_or_symbols=self._config.symbol, feed=DataFeed.IEX)
         trade = self._stock_data.get_stock_latest_trade(req)[self._config.symbol]
         return float(trade.price)
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=1, max=8))
     def get_atr(self, period: int = 20) -> float:
+        from alpaca.data.enums import DataFeed
         from alpaca.data.requests import StockBarsRequest
         from alpaca.data.timeframe import TimeFrame
 
@@ -86,6 +91,7 @@ class AlpacaAdapter:
             timeframe=TimeFrame.Day,
             start=start,
             end=end,
+            feed=DataFeed.IEX,
         )
         bars = self._stock_data.get_stock_bars(req)[self._config.symbol]
         bars = bars[-period:]
@@ -101,6 +107,7 @@ class AlpacaAdapter:
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=1, max=8))
     def get_200dma(self) -> tuple[float, float]:
+        from alpaca.data.enums import DataFeed
         from alpaca.data.requests import StockBarsRequest
         from alpaca.data.timeframe import TimeFrame
 
@@ -111,6 +118,7 @@ class AlpacaAdapter:
             timeframe=TimeFrame.Day,
             start=start,
             end=end,
+            feed=DataFeed.IEX,
         )
         bars = self._stock_data.get_stock_bars(req)[self._config.symbol][-200:]
         closes = [b.close for b in bars]
