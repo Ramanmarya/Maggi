@@ -185,8 +185,11 @@ def main() -> int:
     try:
         return run(args.mode)
     except Exception:
-        logger.error("FATAL in %s cycle:\n%s", args.mode, traceback.format_exc())
-        event("fatal", mode=args.mode, traceback=traceback.format_exc())
+        trace = traceback.format_exc()
+        logger.error("FATAL in %s cycle:\n%s", args.mode, trace)
+        # The event stream is one line per event; the full trace is in the log.
+        # Keep just the exception line so the stream stays scannable.
+        event("fatal", mode=args.mode, error=trace.strip().splitlines()[-1][:300])
         return 3
 
 

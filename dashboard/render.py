@@ -140,8 +140,14 @@ def _bot_tab(d: DashboardData) -> str:
 
     ev = []
     for e in reversed(d.events[-25:]):
+        # Clamp every value: one oversized field (a traceback, a long reason)
+        # would otherwise push the whole stream off the page.
+        def _clip(v: object, limit: int = 90) -> str:
+            text = " ".join(str(v).split())
+            return text if len(text) <= limit else text[: limit - 1] + "\u2026"
+
         extra = " ".join(
-            f'<span class="ek">{html.escape(str(k))}</span>=<span class="ev">{html.escape(str(v))}</span>'
+            f'<span class="ek">{html.escape(str(k))}</span>=<span class="ev">{html.escape(_clip(v))}</span>'
             for k, v in e.items()
             if k not in ("ts", "kind") and not isinstance(v, (list, dict))
         )
