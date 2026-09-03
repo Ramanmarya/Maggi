@@ -229,3 +229,63 @@ def test_excess_inventory_appears_once_real_shares_are_accumulated():
     snap = _snap([_eq(250)])
     held = sum(p.qty for p in snap.positions if p.asset_class == "equity")
     assert max(0.0, held / 100 - state.core_units) == pytest.approx(1.5)
+
+
+# ---- gates must judge the resulting book, not the prior one --------------
+def _spread(i, width=16.0, credit=1.71):
+    from qqq.state import PutSpreadPosition
+
+    return PutSpreadPosition(
+        id=f"s{i}", short_strike=700.0, long_strike=700.0 - width, expiry="2026-12-18",
+        contracts=1, net_credit=credit, opened_at="x",
+    )
+
+
+def test_crash_stress_counts_the_spread_being_proposed():
+    """Checking the book before the trade approves anything whose predecessors
+    were within limits, permitting exactly one spread more than the cap allows.
+    The symptom was a 'cap breached at end of cycle' warning on every run."""
+    from qqq.risk import RiskManager
+
+    cfg = _cfg(equity_basis_override=None)
+    risk = RiskManager(cfg)
+    basis, price = 150_000.0, 717.59
+
+    # Core alone fits; core plus one spread does not.
+    assert risk.check_crash_stress(price, [], [], 1.0, basis).passed is True
+    assert risk.check_crash_stress(price, [_spread(0)], [], 1.0, basis).passed is False
+
+    # So proposing that first spread must be refused.
+    result = risk.check_all_for_new_put_spread(
+        short_strike=700.0, long_strike=684.0, net_credit=1.71, contracts=1,
+        equity=basis, existing_open_spreads=[], underlying_price=price,
+        core_units=1.0, open_calls=[],
+    )
+    assert result.passed is False, "gate approved a trade that puts the book over the cap"
+
+
+def test_aggregate_gate_also_counts_the_proposed_spread():
+    from qqq.risk import RiskManager
+
+    cfg = _cfg(equity_basis_override=None)
+    risk = RiskManager(cfg)
+    # Aggregate cap is 5% — at a 20,000 basis that is 1,000, under one spread.
+    result = risk.check_all_for_new_put_spread(
+        short_strike=700.0, long_strike=684.0, net_credit=1.71, contracts=1,
+        equity=20_000.0, existing_open_spreads=[], underlying_price=300.0,
+        core_units=0.0, open_calls=[],
+    )
+    assert result.passed is False
+
+
+def test_a_spread_is_still_allowed_when_the_resulting_book_fits():
+    from qqq.risk import RiskManager
+
+    cfg = _cfg(equity_basis_override=None)
+    risk = RiskManager(cfg)
+    result = risk.check_all_for_new_put_spread(
+        short_strike=450.0, long_strike=434.0, net_credit=1.71, contracts=1,
+        equity=150_000.0, existing_open_spreads=[], underlying_price=445.0,
+        core_units=1.0, open_calls=[],
+    )
+    assert result.passed is True, "gate refused a trade the caps comfortably allow"

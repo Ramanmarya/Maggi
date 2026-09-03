@@ -159,12 +159,31 @@ class RiskManager:
         core_units: float,
         open_calls: list[CallPosition],
     ) -> RiskCheckResult:
-        """Convenience wrapper: run every gate relevant to opening a new put spread."""
+        """Convenience wrapper: run every gate relevant to opening a new put spread.
+
+        The aggregate and crash-stress gates are evaluated against the book as
+        it would stand AFTER this spread, not before it. Checking the prior
+        book approves any trade whose predecessors were within limits and so
+        permits exactly one spread more than the cap allows — which is what
+        produced the "crash-stress cap breached at end of cycle" warning on
+        essentially every run: the trade was approved and the resulting book
+        was over the limit. §9 caps the portfolio, not the portfolio it used
+        to be.
+        """
+        from dataclasses import replace as _replace
+
+        prospective = list(existing_open_spreads) + [
+            PutSpreadPosition(
+                id="__prospective__", short_strike=short_strike, long_strike=long_strike,
+                expiry="2099-01-01", contracts=contracts, net_credit=net_credit,
+                opened_at="", status="OPEN",
+            )
+        ]
         checks = [
             self.check_spread_max_loss(short_strike, long_strike, net_credit, contracts, equity),
-            self.check_aggregate_put_risk(existing_open_spreads, equity),
+            self.check_aggregate_put_risk(prospective, equity),
             self.check_crash_stress(
-                underlying_price, existing_open_spreads, open_calls, core_units, equity
+                underlying_price, prospective, open_calls, core_units, equity
             ),
         ]
         for result in checks:
@@ -183,9 +202,19 @@ class RiskManager:
         proposing: int = 1,
     ) -> RiskCheckResult:
         """Convenience wrapper: run every gate relevant to opening a new short call."""
+        prospective_calls = list(open_calls)
+        if proposing > 0:
+            prospective_calls.append(
+                CallPosition(
+                    id="__prospective__", short_strike=underlying_price, expiry="2099-01-01",
+                    contracts=proposing, premium_received=0.0, opened_at="", status="OPEN",
+                )
+            )
         checks = [
             self.check_call_coverage(open_calls, excess_units, proposing),
-            self.check_crash_stress(underlying_price, open_spreads, open_calls, core_units, equity),
+            self.check_crash_stress(
+                underlying_price, open_spreads, prospective_calls, core_units, equity
+            ),
         ]
         for result in checks:
             if not result.passed:

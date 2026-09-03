@@ -155,6 +155,27 @@ limit, both of which flip the kill switch. They are set deliberately wide
 because equity here includes the mark-to-market of a core position the
 strategy is designed to hold through corrections.
 
+### Position limits in practice
+
+The four gates interact to cap concurrent put spreads, and the binding one
+changes with price because the core's notional — and therefore its share of
+the crash-stress budget — moves with it:
+
+| QQQ | core notional | −30% shock | headroom | max spreads | binding gate |
+|---|---|---|---|---|---|
+| 717 | $71,759 | $21,528 | $972 | **0** | crash-stress |
+| 650 | $65,000 | $19,500 | $3,000 | 2 | crash-stress |
+| 600 | $60,000 | $18,000 | $4,500 | 3 | crash-stress |
+| 550 | $55,000 | $16,500 | $6,000 | 4 | crash-stress |
+| ≤500 | $50,000 | $15,000 | $7,500 | **5** | aggregate + zones |
+
+So the ceiling is **5 spreads** (5 short + 5 long contracts), set jointly by
+the 5% aggregate cap and the five ladder zones — but only reachable at QQQ
+around $500 or below. At $717 the core alone consumes all but $972 of the
+crash-stress budget and no spread fits. This is the gate working as designed:
+a $71,759 core against a $150,000 basis is a large position, and the strategy
+writes premium only when it has room to.
+
 ## 10. Decision cycle
 
 Runs **daily** (full cycle, near market close) plus **intraday** checks
