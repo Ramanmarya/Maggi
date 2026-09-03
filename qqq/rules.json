@@ -50,9 +50,10 @@
     "short_delta_target": 0.2,
     "protective_delta_target": 0.05,
     "max_risk_reward_ratio": 10.0,
-    "profit_capture_pct": 0.6,
+    "profit_capture_pct": 0.5,
     "close_dte": 3,
-    "_doc": "\u00a77. short_delta_target 0.20 is the midpoint of the 15-25 test range. max_risk_reward_ratio null disables the quality filter. profit_capture_pct is NOT yet enforced \u2014 needs a live per-position mark (\u00a711)."
+    "_doc": "\u00a77. short_delta_target 0.20 is the midpoint of the 15-25 test range. max_risk_reward_ratio null disables the quality filter. profit_capture_pct is NOT yet enforced \u2014 needs a live per-position mark (\u00a711).",
+    "_profit_capture_note": "NOW WIRED (2026-09-03); it was specified in ALGORITHM.md 7 but never implemented, so the only exit was the 3-DTE force close and every spread was held through the highest-gamma stretch of its life. Backtested 2024-03-01..2026-08-28: off -> 28.15% return, 12.04% max DD, Sharpe 0.90, overlay $1,283, 14.2% of credit kept. On -> 40%: 31.09%/11.11%/1.07/$4,235/43.0%; 50%: 30.92%/11.18%/1.05/$4,060; 60%: 30.75%/11.26%/1.03/$3,889; 80%: 30.65%/11.62%/1.00. Better return, lower drawdown and higher Sharpe together. Set to 50 rather than the best-measured 40 because the 40-60 spread is inside one sample's noise and picking the edge of a tested range is how you overfit; 50 is also the standard convention among premium sellers."
   },
   "call_engine": {
     "dte_range": [

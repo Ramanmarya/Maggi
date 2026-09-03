@@ -90,6 +90,9 @@ class StubBroker:
                 )
         return out
 
+    def option_mark(self, symbol: str) -> float | None:
+        return None
+
     def get_current_positions(self) -> PortfolioSnapshot:
         return PortfolioSnapshot(
             equity=self._equity,

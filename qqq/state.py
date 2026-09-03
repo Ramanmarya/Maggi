@@ -30,6 +30,11 @@ class PutSpreadPosition:
     status: Literal["OPEN", "CLOSED"] = "OPEN"
     close_price: float | None = None
     closed_at: str | None = None
+    # OCC symbols of the two legs. Without them an open spread cannot be
+    # re-priced, so the only available exit is a time-based one. Defaulted so
+    # state files written before profit-capture existed still load.
+    short_symbol: str = ""
+    long_symbol: str = ""
 
 
 @dataclass

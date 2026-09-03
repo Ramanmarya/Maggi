@@ -175,3 +175,100 @@ def test_refuses_when_no_leg_fits():
     short = _short_leg(chain)
 
     assert engine._select_long_leg(chain, short, equity=1_000) is None
+
+
+# ---- profit capture (§7) -------------------------------------------------
+class _MarkBroker:
+    """Stub that returns fixed marks so capture maths can be checked exactly."""
+
+    def __init__(self, marks: dict[str, float | None]):
+        self.marks = marks
+        self.closed: list[str] = []
+
+    def option_mark(self, symbol):
+        return self.marks.get(symbol)
+
+    def close_position(self, position_id, limit_pct):
+        from qqq.broker_adapter import OrderResult
+
+        self.closed.append(position_id)
+        return OrderResult(True, position_id, None, "closed")
+
+    def today(self):
+        return date.today()
+
+
+def _open_spread(credit: float = 1.50):
+    from qqq.state import PutSpreadPosition
+
+    return PutSpreadPosition(
+        id="sp-1", short_strike=686.0, long_strike=670.0,
+        expiry=(date.today() + timedelta(days=25)).isoformat(),
+        contracts=1, net_credit=credit, opened_at="2026-09-03T00:00:00Z",
+        short_symbol="SHORT", long_symbol="LONG",
+    )
+
+
+@pytest.mark.parametrize("short_mark,long_mark,expected", [
+    (1.50, 0.00, 0.0),    # unchanged: worth what it was sold for
+    (0.60, 0.00, 0.60),   # 60% of the credit decayed away
+    (0.00, 0.00, 1.0),    # fully decayed
+    (2.00, 0.00, -1.0/3), # moved against the position
+])
+def test_capture_fraction_maths(short_mark, long_mark, expected):
+    config = _config()
+    engine = PutSpreadEngine(_MarkBroker({"SHORT": short_mark, "LONG": long_mark}), config, RiskManager(config))
+    assert engine._captured(_open_spread()) == pytest.approx(expected, abs=1e-6)
+
+
+def test_spread_is_closed_once_the_capture_target_is_hit():
+    config = _config()
+    broker = _MarkBroker({"SHORT": 0.55, "LONG": 0.0})  # 63% captured, target 60%
+    engine = PutSpreadEngine(broker, config, RiskManager(config))
+    from qqq.state import PortfolioState
+
+    state = PortfolioState()
+    state.open_put_spreads = [_open_spread()]
+    engine.manage_existing(state, date.today())
+    assert broker.closed == ["sp-1"]
+    assert state.open_put_spreads[0].status == "CLOSED"
+
+
+def test_spread_is_held_below_the_capture_target():
+    config = _config()
+    broker = _MarkBroker({"SHORT": 0.90, "LONG": 0.0})  # 40% captured
+    engine = PutSpreadEngine(broker, config, RiskManager(config))
+    from qqq.state import PortfolioState
+
+    state = PortfolioState()
+    state.open_put_spreads = [_open_spread()]
+    engine.manage_existing(state, date.today())
+    assert broker.closed == []
+
+
+def test_missing_marks_fall_back_to_the_time_exit_rather_than_guessing():
+    """A data gap must not be read as 'no profit' or 'full profit'."""
+    config = _config()
+    broker = _MarkBroker({"SHORT": None, "LONG": None})
+    engine = PutSpreadEngine(broker, config, RiskManager(config))
+    assert engine._captured(_open_spread()) == 0.0
+    from qqq.state import PortfolioState
+
+    state = PortfolioState()
+    state.open_put_spreads = [_open_spread()]
+    engine.manage_existing(state, date.today())
+    assert broker.closed == []
+
+
+def test_time_exit_still_fires_inside_the_dte_window():
+    config = _config()
+    broker = _MarkBroker({"SHORT": 0.90, "LONG": 0.0})  # not at profit target
+    engine = PutSpreadEngine(broker, config, RiskManager(config))
+    from qqq.state import PortfolioState
+
+    spread = _open_spread()
+    spread.expiry = (date.today() + timedelta(days=2)).isoformat()  # inside 3 DTE
+    state = PortfolioState()
+    state.open_put_spreads = [spread]
+    engine.manage_existing(state, date.today())
+    assert broker.closed == ["sp-1"]

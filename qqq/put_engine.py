@@ -165,6 +165,8 @@ class PutSpreadEngine:
                     id=result.order_id or order.client_order_id,
                     short_strike=order.short_leg.strike,
                     long_strike=order.long_leg.strike,
+                    short_symbol=order.short_leg.symbol,
+                    long_symbol=order.long_leg.symbol,
                     expiry=order.short_leg.expiry.isoformat(),
                     contracts=order.contracts,
                     net_credit=order.limit_net_credit or 0.0,
@@ -180,14 +182,35 @@ class PutSpreadEngine:
                 continue
             expiry = date.fromisoformat(spread.expiry)
             dte = (expiry - today).days
+            reason = None
             if dte <= self._config.put_spread_close_dte:
+                reason = "dte"
+            elif self._captured(spread) >= self._config.put_spread_profit_capture_pct:
+                # §7: take the win rather than hold through the highest-gamma
+                # stretch of the contract's life for the last few percent.
+                reason = "profit_capture"
+
+            if reason is not None:
                 result = self._broker.close_position(spread.id, limit_pct=None)
                 if result.success:
                     spread.status = "CLOSED"
                     spread.close_price = result.filled_avg_price
                     spread.closed_at = datetime.now(timezone.utc).isoformat()
-            # TODO(V5-PARAM): profit-capture check needs the spread's *current*
-            # mark (not just entry credit) from the broker adapter to compare
-            # against put_spread_profit_capture_pct — wire this once
-            # get_option_chain / a position-mark lookup is available per-leg.
         return state
+
+    def _captured(self, spread: PutSpreadPosition) -> float:
+        """Fraction of maximum profit currently realised, 0.0 if unknown.
+
+        Max profit on a credit spread is the credit received, so capture is
+        (credit - cost to close) / credit. Returns 0.0 when either leg has no
+        mark, which degrades to the time-based exit rather than guessing.
+        """
+        credit = spread.net_credit
+        if credit <= 0:
+            return 0.0
+        short_mark = self._broker.option_mark(spread.short_symbol) if spread.short_symbol else None
+        long_mark = self._broker.option_mark(spread.long_symbol) if spread.long_symbol else None
+        if short_mark is None or long_mark is None:
+            return 0.0
+        cost_to_close = short_mark - long_mark
+        return (credit - cost_to_close) / credit

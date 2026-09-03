@@ -178,6 +178,21 @@ class AlpacaAdapter:
             )
         return out
 
+    def option_mark(self, symbol: str) -> float | None:
+        """Latest mid for one contract. None on any failure, so a data gap
+        degrades to the time-based exit rather than crashing the cycle."""
+        try:
+            from alpaca.data.requests import OptionLatestQuoteRequest
+
+            q = self._option_data.get_option_latest_quote(
+                OptionLatestQuoteRequest(symbol_or_symbols=symbol)
+            )[symbol]
+            bid, ask = float(q.bid_price or 0), float(q.ask_price or 0)
+            return (bid + ask) / 2 if bid > 0 and ask > 0 else None
+        except Exception:
+            logger.warning("option_mark unavailable for %s", symbol)
+            return None
+
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=1, max=8))
     def get_current_positions(self) -> PortfolioSnapshot:
         account = self._trading.get_account()

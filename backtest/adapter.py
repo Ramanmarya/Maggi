@@ -101,6 +101,11 @@ class BacktestBroker:
             )
         return out
 
+    def option_mark(self, symbol: str) -> float | None:
+        self._data.load_option_bars([symbol], self._as_of - timedelta(days=3), self._as_of)
+        bar = self._data.cache.bar_on(symbol, self._as_of)
+        return bar.close if bar else None
+
     def get_dividend_calendar(self) -> list[DividendEvent]:
         return []  # not wired; Engine C is dormant until excess units exist
 

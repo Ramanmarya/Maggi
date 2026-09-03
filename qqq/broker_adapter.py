@@ -104,6 +104,14 @@ class BrokerAdapter(Protocol):
 
     def get_option_chain(self, dte_range: tuple[int, int]) -> list[OptionContract]: ...
 
+    def option_mark(self, symbol: str) -> float | None:
+        """Current mid for one contract, or None if unavailable.
+
+        Needed to know what an open spread is worth now, which is what a
+        profit-capture rule requires. Without it the only exit is time.
+        """
+        ...
+
     def get_current_positions(self) -> PortfolioSnapshot: ...
 
     def submit_vertical_spread(self, spread: VerticalSpreadOrder) -> OrderResult: ...

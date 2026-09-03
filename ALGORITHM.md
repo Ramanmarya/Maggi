@@ -188,8 +188,11 @@ Implementation: `qqq/cycle.py`, driven one-shot by `qqq/orchestrator.py`.
   `qqq/backtest_adapter.py` is superseded by `backtest/adapter.py`.
   Remaining limitation: no historical bid/ask on either data plan, so the
   spread is modelled rather than measured.
-- **Profit-capture closes** (60% target) need a live per-position mark from the
-  broker adapter — only the DTE-based force-close is wired.
+- ~~**Profit-capture closes**~~ **Wired** (2026-09-03) via `option_mark()` on
+  the broker protocol. Backtested: enabling it raised return 28.15% → 31.09%,
+  *lowered* max drawdown 12.04% → 11.11% and raised Sharpe 0.90 → 1.07, with
+  the share of collected credit actually kept going from 14.2% to 43.0%. Set
+  to 50%.
 - **Roll logic** for calls threatened by ex-dividend assignment is flagged but
   not executed (logs a warning rather than rolling).
 - **`get_dividend_calendar` on the live Alpaca adapter returns `[]`**, so the
@@ -227,7 +230,22 @@ Implementation: `qqq/cycle.py`, driven one-shot by `qqq/orchestrator.py`.
   As built, the strategy is economically indistinguishable from owning one
   unit of QQQ. This is the headline result and it should be resolved before
   any further tuning.
-- **Engine A never actually accumulates.** In a twelve-month backtest the core
+- **Engines A and B are structurally incompatible.** Engine A accumulates
+  inventory through assignment; Engine B is defined-risk, which means every
+  short put is paired with a long put beneath it. When a spread goes deep
+  in-the-money, the short leg is assigned (+100 shares) *and* the long leg is
+  exercised (−100 shares): **net zero**. A defined-risk spread can never
+  deliver inventory, at any price, ever. So §3's "accumulate more QQQ during
+  meaningful corrections" cannot happen through §7's instrument. Verified by
+  test (`test_put_spread_both_legs_itm_loses_at_most_the_width`). Accumulation
+  requires cash-secured puts or outright share purchases; you can have defined
+  risk or accumulation from this engine, not both. This is the deepest issue
+  in the translation and it invalidates the exposure curve's whole purpose.
+- **Engine C is unreachable as a consequence.** Calls are written only against
+  excess units; excess units require shares beyond the core; shares beyond the
+  core require assignment; assignment cannot happen (above). Zero calls have
+  been written in any backtest.
+- ~~**Engine A never actually accumulates.**~~ In a twelve-month backtest the core
   stayed at exactly 1.00 units for all 251 sessions and there were zero
   assignments. Spreads are the only route to more shares, and the put engine
   force-closes at 3 DTE — before assignment can happen. So the ladder and the
