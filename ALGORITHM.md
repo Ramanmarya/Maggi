@@ -224,12 +224,28 @@ Implementation: `qqq/cycle.py`, driven one-shot by `qqq/orchestrator.py`.
   Feb–May 2025 window the engine opened **zero** spreads — in precisely the
   conditions the strategy exists for. The rule assumes the reference recenters
   reasonably often; a bear market is exactly when it never does.
-- **Over 2.5 years the option overlay contributed −$218.** Backtest 2024-03-01
-  to 2026-08-28 (627 sessions, 83 spreads, including the −34.5% Feb–Apr 2025
-  drawdown): strategy +26.86%, buy-and-hold 100 QQQ with idle cash +27.08%.
-  As built, the strategy is economically indistinguishable from owning one
-  unit of QQQ. This is the headline result and it should be resolved before
-  any further tuning.
+- **Where the edge stands after all fixes**, at the configuration actually
+  shipped (R:R 5:1, 1 contract, 50% profit capture, accumulation off,
+  trade-at-reference on). Backtest 2024-03-01 to 2026-08-28, 626 sessions,
+  including the −34.5% Feb–Apr 2025 fall:
+
+  | | equity | return | max DD | Sharpe |
+  |---|---|---|---|---|
+  | strategy | $130,721 | +30.72% | 11.17% | 1.06 |
+  | buy & hold 1 unit | $127,080 | +27.08% | 11.26% | 0.99 |
+
+  Edge **+$3,641** over its own beta, with slightly lower drawdown. Before the
+  fixes this same window produced an overlay contribution of **−$218**.
+  (An earlier note quoted $135,550 / +$8,471; those were measured at 3
+  contracts, a setting since rejected as overfitting.)
+- **The edge comes from a deviation, not from the doc.** With
+  `trade_at_reference` false — §5 as written, where the reference marks "at
+  the highs" and the strategy waits below it — the same 626 sessions return
+  $128,369 / Sharpe 0.98 against buy-and-hold's 0.99. That is no edge at all.
+  Turning it on ($130,721 / Sharpe 1.06 / DD 11.17%) is what produces one, and
+  it nearly doubles spread count, 41 to 76. Worth stating plainly: the V5
+  design as translated does not beat simply owning the underlying over this
+  sample; the operator's deviation from it does.
 - **Engines A and B are structurally incompatible.** Engine A accumulates
   inventory through assignment; Engine B is defined-risk, which means every
   short put is paired with a long put beneath it. When a spread goes deep
@@ -266,9 +282,6 @@ Implementation: `qqq/cycle.py`, driven one-shot by `qqq/orchestrator.py`.
 - **The risk/reward filter is inert above 5:1.** 8:1, 10:1 and unrestricted
   give byte-identical results, because max-loss-aware leg selection already
   keeps every proposal under 8:1. Only 5:1 binds. Set there.
-- **Option delta weighting** in `DeltaAggregator` treats each option leg as
-  1 delta per contract rather than using per-contract greeks, so the
-  target-exposure comparison in §6 is approximate.
 - **Historical backtest greeks** are Black-Scholes approximations (IV backed
   out from quoted price), since Polygon's historical endpoints don't include
   greeks the way the live snapshot does.
