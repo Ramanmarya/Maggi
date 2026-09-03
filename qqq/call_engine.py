@@ -83,7 +83,7 @@ class HybridCallEngine:
     ) -> bool:
         """True if this call should be refused/avoided due to ex-div assignment risk."""
         straddling = [
-            d for d in dividends if date.today() <= d.ex_date <= contract.expiry
+            d for d in dividends if self._broker.today() <= d.ex_date <= contract.expiry
         ]
         if not straddling:
             return False

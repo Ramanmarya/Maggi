@@ -249,3 +249,55 @@ def test_equity_reconciles_with_cash_plus_marks(setup):
         cycle.run_daily_cycle()
     snap = broker.get_current_positions()
     assert snap.equity == pytest.approx(broker.ledger.cash + sum(p.market_value for p in snap.positions))
+
+
+# ---- date source ---------------------------------------------------------
+def test_broker_supplies_the_date_not_the_system_clock(setup):
+    """Regression. cycle.py used date.today(), so replaying 2025 computed DTE
+    against the real present day: every 28-DTE spread looked ~340 days past
+    expiry and was force-closed in the same cycle that opened it. Option P&L
+    came out to exactly zero because every trade was a same-day round trip at
+    an identical price, which looks like a clean result rather than a bug."""
+    broker, data, _ = setup([700.0] * 60)
+    broker.set_as_of(data.days[30])
+    assert broker.today() == data.days[30]
+    assert broker.today() != date.today() or data.days[30] == date.today()
+
+
+def test_a_freshly_opened_spread_survives_the_session(setup):
+    """The behavioural version of the bug above: a spread opened at 21-35 DTE
+    must still be open when the cycle ends."""
+    from qqq.cycle import StrategyCycle
+
+    path = [700.0] * 60 + [700.0 - i * 2.0 for i in range(20)]
+    broker, data, config = setup(path)
+    cycle = StrategyCycle(broker, config)
+    for day in data.days[60:]:
+        broker.set_as_of(day)
+        cycle.run_daily_cycle()
+        opened = [f for f in broker.ledger.fills
+                  if f.reason == "open_spread_short" and f.day == day]
+        closed_same_day = [f for f in broker.ledger.fills
+                           if f.reason == "close_spread" and f.day == day]
+        if opened:
+            assert not closed_same_day, f"spread opened and closed on {day}"
+            break
+    else:
+        pytest.skip("no spread was opened in this path")
+
+
+def test_spreads_are_held_across_multiple_sessions(setup):
+    """Positive confirmation: at least one spread must live past its open day,
+    otherwise the engine is round-tripping and the backtest measures nothing."""
+    from qqq.cycle import StrategyCycle
+
+    path = [700.0] * 60 + [700.0 - i * 1.5 for i in range(40)]
+    broker, data, config = setup(path)
+    cycle = StrategyCycle(broker, config)
+    for day in data.days[60:]:
+        broker.set_as_of(day)
+        cycle.run_daily_cycle()
+    opens = {f.day for f in broker.ledger.fills if f.reason == "open_spread_short"}
+    closes = {f.day for f in broker.ledger.fills if f.reason == "close_spread"}
+    assert opens, "no spreads opened"
+    assert opens - closes, "every spread closed on the day it opened"

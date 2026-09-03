@@ -40,6 +40,9 @@ class StubBroker:
         self._shares = shares
         self.submitted: list[str] = []
 
+    def today(self) -> date:
+        return date.today()
+
     def is_market_open(self) -> bool:
         return True
 

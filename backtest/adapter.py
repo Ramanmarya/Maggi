@@ -50,6 +50,9 @@ class BacktestBroker:
     def _bars_through(self, day: date) -> list:
         return [b for b in self._bars if b.day <= day]
 
+    def today(self) -> date:
+        return self._as_of
+
     def is_market_open(self) -> bool:
         return True  # the runner only ever steps on real NYSE sessions
 

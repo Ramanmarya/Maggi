@@ -83,6 +83,15 @@ class OrderResult:
 
 
 class BrokerAdapter(Protocol):
+    def today(self) -> date:
+        """The date the strategy should reason about.
+
+        Live this is the wall clock; in a backtest it is the session being
+        replayed. Reading the system clock inside the engines instead makes
+        every historical run compute DTE against the present day.
+        """
+        ...
+
     def is_market_open(self) -> bool: ...
 
     def get_underlying_price(self) -> float: ...

@@ -41,7 +41,7 @@ class Metrics:
             ("Spreads opened", str(self.spreads_opened)),
             ("Spreads closed", str(self.spreads_closed)),
             ("Assignments", str(self.assignments)),
-            ("Premium collected", f"${self.premium_collected:,.2f}"),
+            ("Net credit taken in", f"${self.premium_collected:,.2f}"),
             ("Commission paid", f"${self.commission_paid:,.2f}"),
             ("Realised P&L", f"${self.realized_pnl:,.2f}"),
         ]
@@ -80,9 +80,14 @@ def compute(curve: list[tuple[date, float]], ledger, commission: float) -> Metri
     opened = sum(1 for f in ledger.fills if f.reason == "open_spread_short")
     closed = sum(1 for f in ledger.fills if f.reason == "close_spread" and f.qty > 0)
     assigned = sum(1 for f in ledger.fills if f.reason == "assignment")
-    # A short fill credits cash, so cash_delta is already positive here.
-    premium = sum(f.cash_delta for f in ledger.fills
-                  if f.reason in ("open_spread_short", "single_leg") and f.qty < 0)
+    # NET credit, not gross short premium. Counting only the short leg
+    # reported $32,857 collected on a year where the actual net credit taken
+    # in was $5,894 — the long protective legs cost most of it back, and that
+    # is the number that decides whether the engine makes money.
+    premium = sum(
+        f.cash_delta for f in ledger.fills
+        if f.reason in ("open_spread_short", "open_spread_long", "single_leg")
+    )
 
     return Metrics(
         start_equity=start, end_equity=end, total_return=total_return, cagr=cagr,

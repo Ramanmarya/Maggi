@@ -28,6 +28,7 @@ the QQQ drift-harvest strategy. This file is the front door.
 ```
 core/          platform: order gate, breaker, atomic IO, structured logging
 qqq/           the arm: engines, cycle, orchestrator, rules.json
+backtest/      data + ledger + costs + metrics + runner (see RUNBOOK)
 dashboard/     read-only localhost view (model + render + server)
 scripts/       status.py (operator control), install_launchd.sh
 launchd/       one-shot schedules: daily 12:45 PT, intraday every 15 min
@@ -55,6 +56,7 @@ python3 scripts/status.py                      # read the verdict
 ## Known gaps
 
 See [ALGORITHM.md §11](ALGORITHM.md#11-whats-still-a-placeholder). The two
-that block real use: backtest P&L accounting is not implemented, and the live
-dividend calendar returns empty (so ex-div safety is untested — do not sell
-calls live until it is wired).
+that block real use: the live dividend calendar returns empty (so ex-div
+safety is untested — do not sell calls live until it is wired), and the
+backtest models the bid/ask spread rather than measuring it, because neither
+data plan carries historical NBBO.

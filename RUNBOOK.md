@@ -41,16 +41,28 @@ python3 -m qqq.orchestrator --mode intraday
 ## Backtest
 
 ```bash
-python3 -m qqq.run_backtest --start 2023-01-01 --end 2025-01-01
+python3 -m backtest.run --start 2025-09-02 --end 2026-08-28
+python3 -m backtest.run --start 2026-06-01 --end 2026-08-28 --verbose
 ```
 
-**Read ALGORITHM.md §11 first.** The backtest currently reports a flat equity
-curve because fills do not update cash or positions. It exercises the decision
-path against real historical chains; it does not yet produce returns.
+Runs the real `StrategyCycle` over real NYSE sessions with a real ledger:
+fills move cash, positions are marked daily, commissions and a modelled
+spread are charged, and expiring options settle physically — an in-the-money
+short put delivers shares, which is how Engine A accumulates.
 
-Polygon's historical chain walk makes one quote request per contract. Workers
-are pinned to 1 and requests spaced by `rules.json:backtest.polygon_min_interval_seconds`
-to stay under the ~100 req/min plan cap.
+Data comes from **Alpaca, not Polygon**. Both serve the same daily option
+OHLCV about 18 months back, but Polygon's plan throttles at 5 requests per
+minute and returns one contract per call; Alpaca returns 100 per call and
+does not throttle. No plan upgrade is needed for this.
+
+Everything is cached to `backtest/cache/bars.sqlite` on first fetch, so the
+first run over a new window is network-bound and every rerun after it is
+near-instant. Delete that file to force a refetch.
+
+**What the backtest cannot tell you:** neither data plan carries historical
+bid/ask, so the spread is a modelled assumption (`backtest/costs.py`), not a
+measurement. It is set pessimistically on purpose — a premium seller is not
+filled at mid. Treat the credit side of any result as the optimistic end.
 
 ## When something looks wrong
 

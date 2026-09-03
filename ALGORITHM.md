@@ -182,10 +182,12 @@ Implementation: `qqq/cycle.py`, driven one-shot by `qqq/orchestrator.py`.
 
 ## 11. What's still a placeholder
 
-- **Backtest P&L accounting.** The backtest fetches real historical chains and
-  makes real decisions, but `backtest_adapter.submit_*` never updates cash,
-  equity or the position list — so the equity curve stays flat at the starting
-  balance. It currently produces *decisions*, not *returns*.
+- ~~**Backtest P&L accounting.**~~ **Built** (2026-09-03). `backtest/` now
+  carries a real fill ledger, daily mark-to-market, physical expiry
+  settlement, a NYSE calendar, a cost model and performance metrics. The old
+  `qqq/backtest_adapter.py` is superseded by `backtest/adapter.py`.
+  Remaining limitation: no historical bid/ask on either data plan, so the
+  spread is modelled rather than measured.
 - **Profit-capture closes** (60% target) need a live per-position mark from the
   broker adapter — only the DTE-based force-close is wired.
 - **Roll logic** for calls threatened by ex-dividend assignment is flagged but

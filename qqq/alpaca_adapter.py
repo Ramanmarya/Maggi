@@ -55,6 +55,9 @@ class AlpacaAdapter:
             api_key=config.alpaca_api_key, secret_key=config.alpaca_secret_key
         )
 
+    def today(self) -> date:
+        return date.today()
+
     def is_market_open(self) -> bool:
         """Alpaca's clock is the source of truth — it already knows holidays
         and early closes, which a local calendar would have to re-derive and

@@ -69,7 +69,7 @@ class StrategyCycle:
 
     def run_daily_cycle(self) -> PortfolioState:
         state = self._load()
-        today = date.today()
+        today = self._broker.today()
 
         # 1. Pull market data
         price = self._broker.get_underlying_price()
@@ -178,7 +178,7 @@ class StrategyCycle:
     def run_intraday_check(self) -> PortfolioState:
         """Defensive-only pass: no new positions, ever."""
         state = self._load()
-        today = date.today()
+        today = self._broker.today()
         price = self._broker.get_underlying_price()
         snapshot = self._broker.get_current_positions()
         equity = self._risk_equity(snapshot.equity)

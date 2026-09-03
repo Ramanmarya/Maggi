@@ -35,6 +35,9 @@ class GatedBroker:
         self._arm = arm
 
     # ---- read-only passthrough -------------------------------------------
+    def today(self):
+        return self._inner.today()
+
     def is_market_open(self) -> bool:
         return self._inner.is_market_open()
 
