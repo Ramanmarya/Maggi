@@ -174,6 +174,13 @@ class AlpacaAdapter:
 
         positions = []
         for p in raw_positions:
+            # Only this arm's instrument. The Alpaca account may be shared with
+            # other systems, and counting their holdings as QQQ exposure would
+            # corrupt the unit-delta calculation that drives every sizing
+            # decision. Matches QQQ shares and OCC option symbols rooted on QQQ.
+            sym = str(p.symbol)
+            if not (sym == self._config.symbol or sym.startswith(self._config.symbol)):
+                continue
             asset_class = "option" if getattr(p, "asset_class", None) == "us_option" else "equity"
             positions.append(
                 PositionSnapshot(

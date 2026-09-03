@@ -14,9 +14,10 @@ the architecture doc §6. Two entrypoints:
 from __future__ import annotations
 
 import logging
+import uuid
 from datetime import date
 
-from .broker_adapter import BrokerAdapter
+from .broker_adapter import BrokerAdapter, SingleLegOrder
 from .call_engine import HybridCallEngine
 from .config import StrategyConfig
 from .delta import DeltaAggregator
@@ -65,6 +66,13 @@ class StrategyCycle:
         total_delta = self._delta.total_unit_delta(snapshot)
         logger.info("Total unit-equivalent delta: %.3f", total_delta)
 
+        # 3b. Establish the core position (ALGORITHM.md 3, Engine A).
+        # Nothing else in the strategy buys shares — put spreads only express
+        # willingness to buy lower, and assignment is what converts them into
+        # inventory. Without this the "permanent core" the whole design rests
+        # on never actually exists.
+        state = self._ensure_core_position(state, snapshot, price)
+
         # 4. Ladder check / recenter
         state = self._ladder.maybe_recenter(state, price, atr)
         zone = self._ladder.unused_zone_at_or_below(state, price)
@@ -107,6 +115,45 @@ class StrategyCycle:
 
         # 8. Persist state
         self._save(state)
+        return state
+
+    def _ensure_core_position(self, state: PortfolioState, snapshot, price: float) -> PortfolioState:
+        """Buy up to the core target if the account holds fewer shares than it.
+
+        Deliberately buys only the shortfall against shares actually held at
+        the broker, not against a number carried in state — otherwise a
+        restart, a manual sale or a partial fill would silently double the
+        core. Never sells: trimming the core is not this strategy's job.
+        """
+        unit = self._config.core_unit_shares
+        target_shares = state.core_units * unit
+        held = sum(
+            p.qty
+            for p in snapshot.positions
+            if p.asset_class == "equity" and p.symbol == self._config.symbol
+        )
+        missing = target_shares - held
+        if missing < 1:
+            return state
+
+        order = SingleLegOrder(
+            contract=None,
+            symbol=self._config.symbol,
+            side="buy",
+            qty=int(missing),
+            order_type="market",
+            limit_price=None,
+            client_order_id=f"core-{uuid.uuid4().hex[:10]}",
+        )
+        logger.info(
+            "Core position short by %d shares (held %.0f, target %.0f) — buying.",
+            int(missing), held, target_shares,
+        )
+        result = self._broker.submit_single_leg(order)
+        if result.success:
+            logger.info("Core buy submitted: %s", result.order_id)
+        else:
+            logger.warning("Core buy not placed: %s", result.error or result.status)
         return state
 
     def run_intraday_check(self) -> PortfolioState:

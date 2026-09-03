@@ -34,9 +34,10 @@ class StubBroker:
     so strike/delta selection, risk gating and state persistence all execute.
     """
 
-    def __init__(self, price: float = 500.0, equity: float = 100_000.0):
+    def __init__(self, price: float = 500.0, equity: float = 100_000.0, shares: float = 100.0):
         self._price = price
         self._equity = equity
+        self._shares = shares
         self.submitted: list[str] = []
 
     def is_market_open(self) -> bool:
@@ -91,13 +92,13 @@ class StubBroker:
             equity=self._equity,
             cash=self._equity,
             buying_power=self._equity * 2,
-            positions=[
+            positions=[] if not self._shares else [
                 PositionSnapshot(
                     symbol="QQQ",
-                    qty=100,
+                    qty=self._shares,
                     avg_entry_price=self._price,
                     current_price=self._price,
-                    market_value=self._price * 100,
+                    market_value=self._price * self._shares,
                     unrealized_pl=0.0,
                     asset_class="equity",
                 )
@@ -138,8 +139,14 @@ def run_preflight(config, gate) -> tuple[bool, list[str]]:
         # the gate while the phase forbids orders, submission would be blocked
         # and the order-placing code — the part that has never run in anger —
         # would go untested. The gate is asserted separately below.
-        for label, price in (("at highs", 500.0), ("-12% correction", 440.0), ("-28% crash", 360.0)):
-            stub = StubBroker(price=price)
+        scenarios = (
+            ("empty account", 500.0, 0.0),
+            ("at highs", 500.0, 100.0),
+            ("-12% correction", 440.0, 100.0),
+            ("-28% crash", 360.0, 100.0),
+        )
+        for label, price, shares in scenarios:
+            stub = StubBroker(price=price, shares=shares)
             cycle = StrategyCycle(stub, scratch_config)
             try:
                 state = cycle.run_daily_cycle()
@@ -148,6 +155,12 @@ def run_preflight(config, gate) -> tuple[bool, list[str]]:
                     f"ref={state.reference_price} zones={len(state.acquisition_ladder)} "
                     f"submitted={stub.submitted or 'none'}"
                 )
+                if shares == 0 and "single_leg" not in stub.submitted:
+                    passed = False
+                    findings.append(
+                        "core bootstrap: FAILED — account holds no shares but no core "
+                        "buy was submitted; Engine A's core would never exist"
+                    )
             except Exception as e:
                 passed = False
                 findings.append(f"daily cycle @ {label}: FAILED — {type(e).__name__}: {e}")
