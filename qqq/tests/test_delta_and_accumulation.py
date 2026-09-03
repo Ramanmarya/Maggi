@@ -247,7 +247,10 @@ def test_crash_stress_counts_the_spread_being_proposed():
     The symptom was a 'cap breached at end of cycle' warning on every run."""
     from qqq.risk import RiskManager
 
-    cfg = _cfg(equity_basis_override=None)
+    # Pins its own 15% cap: this test is about the off-by-one mechanic, not
+    # about whatever the strategy is currently tuned to. Reading the live
+    # value makes it fail on a retune, which is a false alarm.
+    cfg = _cfg(equity_basis_override=None, max_crash_stress_pct=0.15)
     risk = RiskManager(cfg)
     basis, price = 150_000.0, 717.59
 
