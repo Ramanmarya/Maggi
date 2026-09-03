@@ -195,6 +195,15 @@ Implementation: `qqq/cycle.py`, driven one-shot by `qqq/orchestrator.py`.
 - **`get_dividend_calendar` on the live Alpaca adapter returns `[]`**, so the
   ex-div safety check passes trivially. Do not sell calls live until this is
   wired (Polygon's dividends endpoint already works in the backtest adapter).
+- **Engine A never actually accumulates.** In a twelve-month backtest the core
+  stayed at exactly 1.00 units for all 251 sessions and there were zero
+  assignments. Spreads are the only route to more shares, and the put engine
+  force-closes at 3 DTE — before assignment can happen. So the ladder and the
+  target-exposure curve gate *whether a spread is written*, but the mechanism
+  that would carry exposure from 1.0 toward the curve's 3.25 never fires. The
+  strategy as built is "long one unit plus a put-spread overlay", not the
+  accumulating ladder §3 and §6 describe. Deciding whether that is a bug or an
+  acceptable simplification is an open design question.
 - **Position sizing beyond 1 contract per signal** is not implemented — the
   risk gates enforce the equity caps regardless of count, but the engines
   don't yet decide *when* to size up.
