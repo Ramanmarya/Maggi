@@ -131,6 +131,12 @@ class StrategyConfig:
     ladder_trade_at_reference: bool = field(
         default_factory=lambda: bool(_rule("ladder", "trade_at_reference", False))
     )
+    # Days before a used zone becomes available again. 0 reproduces the
+    # source doc: a zone is spent until the ladder recenters on a new high,
+    # which in a one-directional decline means never. See rules.json.
+    ladder_zone_rearm_days: int = field(
+        default_factory=lambda: int(_rule("ladder", "zone_rearm_days", 0))
+    )
 
     # --- Regime (§4) ---
     regime_slope_lookback_days: int = field(

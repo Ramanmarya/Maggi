@@ -94,7 +94,7 @@ class StrategyCycle:
 
         # 4. Ladder check / recenter
         state = self._ladder.maybe_recenter(state, price, atr)
-        zone = self._ladder.unused_zone_at_or_below(state, price)
+        zone = self._ladder.unused_zone_at_or_below(state, price, today)
 
         # 5. Put engine pass
         # V5 doc §17: reaching an unused zone does NOT automatically mean
@@ -112,7 +112,7 @@ class StrategyCycle:
             order = self._puts.propose_spread(state, equity)
             if order is not None:
                 state = self._puts.submit(state, order)
-                state = self._ladder.mark_zone_filled(state, zone)
+                state = self._ladder.mark_zone_filled(state, zone, today)
         state = self._puts.manage_existing(state, today)
 
         # 6. Call engine pass

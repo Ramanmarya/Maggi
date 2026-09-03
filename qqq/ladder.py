@@ -16,6 +16,8 @@ used, overridable in config.py.
 
 from __future__ import annotations
 
+from datetime import date
+
 from .broker_adapter import BrokerAdapter
 from .config import StrategyConfig
 from .state import PortfolioState
@@ -45,6 +47,7 @@ class AcquisitionLadder:
             state.last_recenter_price = price
             state.acquisition_ladder = self.build_zones(price, atr)
             state.filled_zones = []
+            state.zone_filled_on = {}
             return state
 
         if price >= state.reference_price + threshold:
@@ -52,10 +55,13 @@ class AcquisitionLadder:
             state.last_recenter_price = price
             state.acquisition_ladder = self.build_zones(price, atr)
             state.filled_zones = []  # anti-clustering resets on recenter
+            state.zone_filled_on = {}
 
         return state
 
-    def unused_zone_at_or_below(self, state: PortfolioState, price: float) -> float | None:
+    def unused_zone_at_or_below(
+        self, state: PortfolioState, price: float, today: date | None = None
+    ) -> float | None:
         """Return the shallowest unfilled acquisition zone that `price` has
         reached (price <= zone level), or None.
 
@@ -76,13 +82,48 @@ class AcquisitionLadder:
             else state.acquisition_ladder[1:]
         )
         candidates = [
-            z for z in acquisition_zones if price <= z and z not in state.filled_zones
+            z for z in acquisition_zones
+            if price <= z and self._zone_available(state, z, today)
         ]
         if not candidates:
             return None
-        return min(candidates)
+        # max() is the SHALLOWEST zone: zones are prices, so the shallowest
+        # (nearest the reference) is the highest number. This was min(), which
+        # returned the deepest zone — the opposite of the docstring above and
+        # of §5's gradual intent. On a gap-down the engine jumped straight to
+        # its most aggressive level and burned zones fastest, which made the
+        # exhaustion problem worse.
+        return max(candidates)
 
-    def mark_zone_filled(self, state: PortfolioState, zone: float) -> PortfolioState:
+    def _zone_available(self, state: PortfolioState, zone: float, today: date | None) -> bool:
+        """A zone is available if unused, or used long enough ago to re-arm.
+
+        With zone_rearm_days at 0 this is the source doc's rule: spent until
+        the ladder recenters. That rule assumes the reference recenters
+        reasonably often, which is true in a rising or choppy market and false
+        in exactly the market the strategy is built for — a sustained decline
+        consumes every zone in its first few percent and the engine then does
+        nothing for the rest of it. A cooldown keeps accumulation gradual,
+        which is what §5 actually asks for, without making it terminal.
+        """
+        if zone not in state.filled_zones:
+            return True
+        rearm = self._config.ladder_zone_rearm_days
+        if rearm <= 0 or today is None:
+            return False
+        filled_on = state.zone_filled_on.get(str(zone))
+        if not filled_on:
+            return False
+        try:
+            return (today - date.fromisoformat(filled_on)).days >= rearm
+        except ValueError:
+            return False
+
+    def mark_zone_filled(
+        self, state: PortfolioState, zone: float, today: date | None = None
+    ) -> PortfolioState:
         if zone not in state.filled_zones:
             state.filled_zones.append(zone)
+        if today is not None:
+            state.zone_filled_on[str(zone)] = today.isoformat()
         return state

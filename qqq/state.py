@@ -55,6 +55,9 @@ class PortfolioState:
     reference_price: float | None = None
     acquisition_ladder: list[float] = field(default_factory=list)
     filled_zones: list[float] = field(default_factory=list)  # set() isn't JSON-native
+    # zone -> ISO date it was filled, so a zone can re-arm after a cooldown
+    # instead of being spent for the life of the ladder.
+    zone_filled_on: dict = field(default_factory=dict)
     last_recenter_price: float | None = None
     current_regime: Regime = "NEUTRAL"
     last_updated: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
@@ -74,6 +77,7 @@ class PortfolioState:
             reference_price=d.get("reference_price"),
             acquisition_ladder=d.get("acquisition_ladder", []),
             filled_zones=d.get("filled_zones", []),
+            zone_filled_on=d.get("zone_filled_on", {}),
             last_recenter_price=d.get("last_recenter_price"),
             current_regime=d.get("current_regime", "NEUTRAL"),
             last_updated=d.get("last_updated", datetime.now(timezone.utc).isoformat()),
