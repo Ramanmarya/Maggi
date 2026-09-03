@@ -174,13 +174,21 @@ def _risk_tab(d: DashboardData) -> str:
     exposure = ""
     if d.target_units is not None:
         held = d.core_units + d.excess_units
-        width = min(100, max(2, held / max(d.target_units, 0.01) * 100))
+        ratio = held / max(d.target_units, 0.01)
+        width = min(100, max(2, ratio * 100))
+        under = held < d.target_units
+        hint = (
+            "Below target — reaching the next unfilled zone will propose a spread."
+            if under
+            else "At or above target — reaching a zone adds nothing until price falls further "
+                 "or the curve's target rises."
+        )
         exposure = f"""
         <div class="section-title">Exposure vs target curve</div>
         <div class="expo">
           <div class="expo-nums"><span>held <b>{held:.2f}</b> units</span><span>target <b>{d.target_units:.2f}</b> at −{d.decline_pct*100:.1f}%</span></div>
-          <div class="bar"><div class="bar-fill" style="width:{width:.0f}%"></div></div>
-          <div class="hint">Below target means the ladder may add on the next zone touch; at or above it, reaching a zone adds nothing.</div>
+          <div class="bar"><div class="bar-fill{'' if under else ' over'}" style="width:{width:.0f}%"></div></div>
+          <div class="hint">{hint}</div>
         </div>"""
 
     return f"""
@@ -372,6 +380,7 @@ h1 .accent{color:var(--blue);}
 .expo-nums{display:flex;justify-content:space-between;font-size:13px;margin-bottom:8px;}
 .bar{height:9px;background:var(--head);border-radius:999px;overflow:hidden;}
 .bar-fill{height:100%;background:var(--blue);border-radius:999px;}
+.bar-fill.over{background:var(--green);}
 
 .empty{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:26px 20px;text-align:center;}
 .empty-title{font-size:16px;font-weight:700;margin-bottom:7px;}
