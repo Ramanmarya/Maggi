@@ -254,9 +254,18 @@ Implementation: `qqq/cycle.py`, driven one-shot by `qqq/orchestrator.py`.
   strategy as built is "long one unit plus a put-spread overlay", not the
   accumulating ladder §3 and §6 describe. Deciding whether that is a bug or an
   acceptable simplification is an open design question.
-- **Position sizing beyond 1 contract per signal** is not implemented — the
-  risk gates enforce the equity caps regardless of count, but the engines
-  don't yet decide *when* to size up.
+- ~~**Position sizing beyond 1 contract**~~ **Implemented and swept**; kept at
+  1. Edge over buy-and-hold ran $3,642 / $1,338 / $8,471 / $4,353 for 1/2/3/4
+  contracts, Sharpe 1.06 / 0.90 / 1.04 / 1.00 — non-monotonic, with the swing
+  between adjacent settings exceeding the total edge of most of them. That is
+  path dependence, not a size effect. 3 looks best on this sample; choosing it
+  would be overfitting.
+- ~~**Per-contract delta weighting**~~ **Fixed.** The aggregator scored a
+  short 20-delta put as −1.00 units — short 100 shares — when it is about
+  +0.20. Spreads cancelled the error, so it never showed in results.
+- **The risk/reward filter is inert above 5:1.** 8:1, 10:1 and unrestricted
+  give byte-identical results, because max-loss-aware leg selection already
+  keeps every proposal under 8:1. Only 5:1 binds. Set there.
 - **Option delta weighting** in `DeltaAggregator` treats each option leg as
   1 delta per contract rather than using per-contract greeks, so the
   target-exposure comparison in §6 is approximate.

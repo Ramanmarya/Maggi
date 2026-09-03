@@ -72,8 +72,18 @@ def _chain() -> list[OptionContract]:
     return out
 
 
+# Pinned rather than inherited from rules.json: these tests exercise
+# leg-selection mechanics, and reading the live tuning makes them fail
+# whenever the strategy is retuned — which is a false alarm, not a
+# regression. ALGORITHM.md §7's documented default is 10:1.
+DOC_RISK_REWARD_CAP = 10.0
+
+
 def _config(**kw) -> StrategyConfig:
-    base = StrategyConfig(alpaca_api_key="x", alpaca_secret_key="y")
+    base = replace(
+        StrategyConfig(alpaca_api_key="x", alpaca_secret_key="y"),
+        put_spread_max_risk_reward_ratio=DOC_RISK_REWARD_CAP,
+    )
     return replace(base, **kw) if kw else base
 
 
@@ -272,3 +282,12 @@ def test_time_exit_still_fires_inside_the_dte_window():
     state.open_put_spreads = [spread]
     engine.manage_existing(state, date.today())
     assert broker.closed == ["sp-1"]
+
+
+def test_live_risk_reward_cap_is_sane_whatever_it_is_tuned_to():
+    """Separate from the mechanics tests above: whatever rules.json currently
+    says, the cap must be either disabled or a ratio above 1:1. A cap below
+    1:1 would demand a spread that profits more than it can lose, which no
+    credit spread does, and would silently refuse every trade."""
+    cap = StrategyConfig(alpaca_api_key="x", alpaca_secret_key="y").put_spread_max_risk_reward_ratio
+    assert cap is None or cap > 1.0
