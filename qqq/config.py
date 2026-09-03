@@ -193,6 +193,12 @@ class StrategyConfig:
     crash_stress_shocks: tuple[float, ...] = field(
         default_factory=lambda: tuple(_rule("risk", "crash_stress_shocks", [-0.05, -0.10, -0.15, -0.20, -0.30]))
     )
+    # When set, the risk gates size against this figure instead of live equity.
+    # See rules.json:risk._equity_basis_note — this can authorise losses larger
+    # than the account can absorb, so it is paper-only.
+    equity_basis_override: float | None = field(
+        default_factory=lambda: _rule("risk", "equity_basis_override", None)
+    )
 
     # --- Platform-level breaker limits (not from the source doc) ---
     daily_loss_limit_pct: float = field(

@@ -1,32 +1,32 @@
 {
-  "_doc": "Every tunable for the QQQ drift-harvest arm. Values here override the dataclass defaults in config.py. Section numbers refer to ALGORITHM.md. Editing this file changes strategy behavior on the next cycle — it is operator territory, and every change should be recorded in the commit message.",
-
+  "_doc": "Every tunable for the QQQ drift-harvest arm. Values here override the dataclass defaults in config.py. Section numbers refer to ALGORITHM.md. Editing this file changes strategy behavior on the next cycle \u2014 it is operator territory, and every change should be recorded in the commit message.",
   "instrument": {
     "symbol": "QQQ",
     "core_unit_shares": 100,
-    "_doc": "1 unit = 100 shares = 1 option contract's worth of underlying (ALGORITHM.md §2)."
+    "_doc": "1 unit = 100 shares = 1 option contract's worth of underlying (ALGORITHM.md \u00a72)."
   },
-
   "cadence": {
     "intraday_check_interval_minutes": 15,
-    "_doc": "Intraday passes are defensive only — crash-stress re-check and ex-div monitoring. They never open positions (§10)."
+    "_doc": "Intraday passes are defensive only \u2014 crash-stress re-check and ex-div monitoring. They never open positions (\u00a710)."
   },
-
   "ladder": {
     "atr_period_days": 20,
-    "atr_multipliers": [0.0, 1.5, 3.0, 5.0],
+    "atr_multipliers": [
+      0.0,
+      1.5,
+      3.0,
+      5.0
+    ],
     "recenter_trigger_atr_mult": 0.5,
-    "_doc": "§5. Multiplier 0.0 is the reference level itself — tracked for anti-clustering but never a buy zone. Recenter threshold of 0.5 ATR is the agreed starting value; the source doc left 'meaningful new high' open."
+    "_doc": "\u00a75. Multiplier 0.0 is the reference level itself \u2014 tracked for anti-clustering but never a buy zone. Recenter threshold of 0.5 ATR is the agreed starting value; the source doc left 'meaningful new high' open."
   },
-
   "regime": {
     "slope_lookback_days": 20,
     "slope_flat_band": 0.0,
-    "_doc": "§4. BULL = price > 200DMA and slope > band; DEFENSIVE = price < 200DMA and slope < -band; else NEUTRAL. flat_band 0.0 means no dead zone, matching the doc."
+    "_doc": "\u00a74. BULL = price > 200DMA and slope > band; DEFENSIVE = price < 200DMA and slope < -band; else NEUTRAL. flat_band 0.0 means no dead zone, matching the doc."
   },
-
   "exposure_curve": {
-    "_doc": "§6. Target unit-equivalent exposure keyed to decline from reference. Explicitly a hypothesis to backtest, not a tuned constant. Linear-interpolated between points.",
+    "_doc": "\u00a76. Target unit-equivalent exposure keyed to decline from reference. Explicitly a hypothesis to backtest, not a tuned constant. Linear-interpolated between points.",
     "points": {
       "0.00": 1.0,
       "0.05": 1.5,
@@ -37,48 +37,57 @@
       "0.30": 3.25
     }
   },
-
   "put_engine": {
-    "dte_range": [21, 35],
-    "short_delta_target": 0.20,
+    "dte_range": [
+      21,
+      35
+    ],
+    "short_delta_target": 0.2,
     "protective_delta_target": 0.05,
     "max_risk_reward_ratio": 10.0,
-    "profit_capture_pct": 0.60,
+    "profit_capture_pct": 0.6,
     "close_dte": 3,
-    "_doc": "§7. short_delta_target 0.20 is the midpoint of the 15-25 test range. max_risk_reward_ratio null disables the quality filter. profit_capture_pct is NOT yet enforced — needs a live per-position mark (§11)."
+    "_doc": "\u00a77. short_delta_target 0.20 is the midpoint of the 15-25 test range. max_risk_reward_ratio null disables the quality filter. profit_capture_pct is NOT yet enforced \u2014 needs a live per-position mark (\u00a711)."
   },
-
   "call_engine": {
-    "dte_range": [21, 35],
-    "short_delta_target": 0.20,
+    "dte_range": [
+      21,
+      35
+    ],
+    "short_delta_target": 0.2,
     "short_delta_target_post_rebound": 0.25,
-    "profit_capture_pct": 0.60,
-    "rebound_retracement_pct": 0.50,
+    "profit_capture_pct": 0.6,
+    "rebound_retracement_pct": 0.5,
     "min_effective_sale_vs_reference": 1.0,
-    "_doc": "§8. min_effective_sale_vs_reference 1.0 means strike+premium must be >= reference price: never monetize excess inventory below the level that triggered accumulating it. Core unit is never capped."
+    "_doc": "\u00a78. min_effective_sale_vs_reference 1.0 means strike+premium must be >= reference price: never monetize excess inventory below the level that triggered accumulating it. Core unit is never capped."
   },
-
   "dividend": {
     "min_extrinsic_over_dividend_ratio": 1.25,
-    "_doc": "§8 QQQ-specific. Refuse a call straddling ex-div whose extrinsic value is below 1.25x the dividend — that is when early assignment becomes rational for the holder. MNQ has no equivalent."
+    "_doc": "\u00a78 QQQ-specific. Refuse a call straddling ex-div whose extrinsic value is below 1.25x the dividend \u2014 that is when early assignment becomes rational for the holder. MNQ has no equivalent."
   },
-
   "risk": {
     "max_loss_per_spread_pct": 0.01,
     "max_aggregate_put_risk_pct": 0.05,
     "max_crash_stress_pct": 0.15,
-    "crash_stress_shocks": [-0.05, -0.10, -0.15, -0.20, -0.30],
+    "crash_stress_shocks": [
+      -0.05,
+      -0.1,
+      -0.15,
+      -0.2,
+      -0.3
+    ],
     "daily_loss_limit_pct": 0.06,
     "max_drawdown_pct": 0.25,
-    "_doc": "§9 gates 1-3 are max_loss_per_spread / max_aggregate_put_risk / max_crash_stress. The doc allows crash-stress up to 0.20; 0.15 is the stricter default. daily_loss_limit_pct and max_drawdown_pct drive core/circuit_breaker.py and are NOT from the source doc — they are platform-level backstops. Both are set wide because equity here includes the mark-to-market of a core position the strategy is designed to hold through corrections; a tight daily limit would trip the breaker in exactly the drawdown the ladder wants to buy."
+    "_doc": "\u00a79 gates 1-3 are max_loss_per_spread / max_aggregate_put_risk / max_crash_stress. The doc allows crash-stress up to 0.20; 0.15 is the stricter default. daily_loss_limit_pct and max_drawdown_pct drive core/circuit_breaker.py and are NOT from the source doc \u2014 they are platform-level backstops. Both are set wide because equity here includes the mark-to-market of a core position the strategy is designed to hold through corrections; a tight daily limit would trip the breaker in exactly the drawdown the ladder wants to buy.",
+    "equity_basis_override": 150000,
+    "_equity_basis_note": "OPERATOR OVERRIDE, set 2026-09-03. When non-null, every risk gate in ALGORITHM.md 9 sizes against this figure instead of live account equity. Set to 150000 while the paper account holds ~100k, deliberately, because a 100-share QQQ core at ~$717 is 72% of a 100k account and the -30% crash-stress shock alone breaches the 15% cap, so no spread could ever open. This makes the caps ~50% larger than the account can actually absorb: a loss the gates consider acceptable can exceed what the account holds. Acceptable on paper; set back to null before any real money. The circuit breaker is NOT affected - it still measures true equity."
   },
-
   "backtest": {
     "risk_free_rate": 0.045,
     "dividend_yield_estimate": 0.006,
-    "chain_strike_band_pct": 0.20,
+    "chain_strike_band_pct": 0.2,
     "polygon_max_workers": 1,
     "polygon_min_interval_seconds": 0.7,
-    "_doc": "§11. Historical greeks are Black-Scholes approximations (IV backed out of the quoted mid) because Polygon's historical endpoints carry no greeks. The chain walk makes one quotes request per contract, so polygon_max_workers is pinned to 1 and requests are spaced by polygon_min_interval_seconds to stay under the ~100 req/min plan cap."
+    "_doc": "\u00a711. Historical greeks are Black-Scholes approximations (IV backed out of the quoted mid) because Polygon's historical endpoints carry no greeks. The chain walk makes one quotes request per contract, so polygon_max_workers is pinned to 1 and requests are spaced by polygon_min_interval_seconds to stay under the ~100 req/min plan cap."
   }
 }

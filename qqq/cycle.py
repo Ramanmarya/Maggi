@@ -48,6 +48,25 @@ class StrategyCycle:
     def _save(self, state: PortfolioState) -> None:
         save_state(state, self._config.state_file_path)
 
+    def _risk_equity(self, actual_equity: float) -> float:
+        """The figure the risk gates size against.
+
+        Normally the live account equity. When rules.json sets an
+        equity_basis_override the gates use that instead — which lets them
+        authorise a loss larger than the account actually holds, so it is
+        announced on every cycle rather than applied quietly.
+        """
+        override = self._config.equity_basis_override
+        if not override:
+            return actual_equity
+        logger.warning(
+            "RISK BASIS OVERRIDE: gates sizing against $%s, not the actual $%s. "
+            "Caps are %.0f%% of what this account can absorb.",
+            f"{override:,.2f}", f"{actual_equity:,.2f}",
+            actual_equity / override * 100,
+        )
+        return float(override)
+
     def run_daily_cycle(self) -> PortfolioState:
         state = self._load()
         today = date.today()
@@ -56,7 +75,7 @@ class StrategyCycle:
         price = self._broker.get_underlying_price()
         atr = self._broker.get_atr()
         snapshot = self._broker.get_current_positions()
-        equity = snapshot.equity
+        equity = self._risk_equity(snapshot.equity)
 
         # 2. Update regime
         state.current_regime = self._regime.current_regime()
@@ -162,7 +181,7 @@ class StrategyCycle:
         today = date.today()
         price = self._broker.get_underlying_price()
         snapshot = self._broker.get_current_positions()
-        equity = snapshot.equity
+        equity = self._risk_equity(snapshot.equity)
 
         stress = self._risk.check_crash_stress(
             price, state.open_put_spreads, state.open_calls, state.core_units, equity
