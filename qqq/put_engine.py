@@ -29,6 +29,34 @@ class PutSpreadEngine:
         self._config = config
         self._risk = risk
 
+    def _liquid_only(self, legs: list[OptionContract]) -> list[OptionContract]:
+        """Drop contracts this arm could not get back out of.
+
+        Selling is always easy; the wheel's problem is CLOSING -- at 50%
+        profit, or rolling at 3 DTE. A strike with almost no open interest
+        leaves only a punitive spread or holding to expiry, which converts a
+        managed position into an assignment nobody chose. Both filters are
+        off by default (0), so arms on deep chains are unaffected.
+        """
+        min_oi = self._config.min_open_interest
+        max_spread = self._config.max_spread_pct_of_mid
+        if min_oi <= 0 and max_spread <= 0:
+            return legs
+        out = []
+        for c in legs:
+            if min_oi > 0:
+                oi = c.open_interest
+                # Unknown OI is not proof of liquidity. On an arm that asked
+                # for a floor, absent data fails the floor.
+                if oi is None or oi < min_oi:
+                    continue
+            if max_spread > 0:
+                mid = (c.bid + c.ask) / 2
+                if mid <= 0 or (c.ask - c.bid) / mid > max_spread:
+                    continue
+            out.append(c)
+        return out
+
     def _select_short_leg(
         self, chain: list[OptionContract], regime: str = "BULL"
     ) -> OptionContract | None:
@@ -37,6 +65,7 @@ class PutSpreadEngine:
         from .regime_policy import RegimePolicy
 
         puts = [c for c in chain if c.option_type == "put" and c.delta is not None]
+        puts = self._liquid_only(puts)
         if not puts:
             return None
         policy = RegimePolicy.for_regime(self._config, regime)

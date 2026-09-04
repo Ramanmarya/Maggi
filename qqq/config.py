@@ -294,6 +294,21 @@ class StrategyConfig:
     continuous_max_per_expiry: int = field(
         default_factory=lambda: int(_rule("put_engine", "continuous_max_per_expiry", 2))
     )
+    # --- Liquidity floor -----------------------------------------------
+    # A contract with almost no open interest can be SOLD and then not
+    # bought back: the wheel needs to close at 50% profit or roll at 3 DTE,
+    # and an empty book means crossing a punitive spread or holding to
+    # expiry. QQQ's chain hides this (median OI 289); XLE's does not
+    # (median 62, and only 17 of 53 quoted strikes above 100).
+    min_open_interest: int = field(
+        default_factory=lambda: int(_rule("put_engine", "min_open_interest", 0))
+    )
+    # Refuse a quote whose bid-ask is a large fraction of its own mid. On a
+    # thin chain the mid is not a tradeable price, and round-tripping it
+    # twice can exceed the entire premium.
+    max_spread_pct_of_mid: float = field(
+        default_factory=lambda: float(_rule("put_engine", "max_spread_pct_of_mid", 0.0))
+    )
     put_structure: str = field(
         default_factory=lambda: _env_or(
             "PUT_STRUCTURE", _rule("put_engine", "structure", "spread"), str
