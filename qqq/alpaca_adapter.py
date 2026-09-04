@@ -270,7 +270,7 @@ class AlpacaAdapter:
         from alpaca.trading.requests import LimitOrderRequest, OptionLegRequest
 
         if spread.long_leg is None:
-            if self._config.put_structure != "cash_secured":
+            if self._config.put_structure not in ("cash_secured", "hybrid"):
                 # §8 forbids naked puts in the base strategy. The engine can
                 # only produce one when protective_leg is disabled for
                 # testing, so refuse rather than route it to a live account.

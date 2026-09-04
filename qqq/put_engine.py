@@ -152,6 +152,25 @@ class PutSpreadEngine:
 
         return min(fitting, key=lambda c: c.strike)  # lowest strike = widest spread
 
+    def _structure_for_next_put(self, state: PortfolioState) -> bool:
+        """True when the next put should be cash-secured rather than a spread.
+
+        Under "hybrid" the first N concurrent shorts are cash-secured so the
+        book can still be assigned into shares — a defined-risk spread never
+        delivers inventory, because assignment of the short and exercise of
+        the long net to zero. Past those slots the risk budget buys more as
+        spreads: §31's shock charges a spread its width but an unspread put
+        its whole strike, so the same budget funds several times the count.
+        """
+        structure = self._config.put_structure
+        if structure != "hybrid":
+            return structure == "cash_secured"
+        unspread = sum(
+            1 for s in state.open_put_spreads
+            if s.status == "OPEN" and not s.long_strike
+        )
+        return unspread < self._config.hybrid_cash_secured_slots
+
     def propose_spread(
         self, state: PortfolioState, equity: float, regime: str = "BULL"
     ) -> VerticalSpreadOrder | None:
@@ -161,8 +180,15 @@ class PutSpreadEngine:
             return None
         price = self._broker.get_underlying_price()
         contracts = max(1, self._config.put_spread_contracts)
-        cash_secured = self._config.put_structure == "cash_secured"
-        if self._config.put_protective_leg and not cash_secured:
+        cash_secured = self._structure_for_next_put(state)
+        # A hybrid's overflow leg must be DEFINED risk. Without this, an
+        # operator who had turned the protective leg off for §39 Q1 testing
+        # would silently get unlimited-risk naked puts past the slots.
+        needs_long = not cash_secured and (
+            self._config.put_protective_leg
+            or self._config.put_structure == "hybrid"
+        )
+        if needs_long:
             long_leg = self._select_long_leg(chain, short_leg, equity, state, price, contracts)
             if long_leg is None:
                 return None

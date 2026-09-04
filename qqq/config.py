@@ -224,7 +224,20 @@ class StrategyConfig:
         default_factory=lambda: int(_rule("put_engine", "min_days_between_entries", 7))
     )
     put_structure: str = field(
-        default_factory=lambda: str(_rule("put_engine", "structure", "spread"))
+        default_factory=lambda: _env_or(
+            "PUT_STRUCTURE", _rule("put_engine", "structure", "spread"), str
+        )
+    )
+    # HYBRID: the first N concurrent short puts are cash-secured (they can be
+    # assigned, which is the only way this strategy acquires inventory); every
+    # put beyond N carries a protective long leg. A spread's crash-stress
+    # charge is its WIDTH, not its notional, so incremental contracts cost a
+    # fraction of the risk budget an unspread put consumes -- which is what
+    # makes several concurrent positions affordable on an account this size.
+    hybrid_cash_secured_slots: int = field(
+        default_factory=lambda: _env_or(
+            "HYBRID_SLOTS", _rule("put_engine", "hybrid_cash_secured_slots", 2), int
+        )
     )
     put_protective_leg: bool = field(
         default_factory=lambda: bool(_rule("put_engine", "protective_leg", True))
@@ -271,7 +284,9 @@ class StrategyConfig:
         default_factory=lambda: _rule("risk", "max_aggregate_put_risk_pct", 0.05)
     )
     max_crash_stress_pct: float = field(
-        default_factory=lambda: _rule("risk", "max_crash_stress_pct", 0.15)
+        default_factory=lambda: _env_or(
+            "MAX_CRASH_STRESS_PCT", _rule("risk", "max_crash_stress_pct", 0.15), float
+        )
     )
     # §31 caps the loss under a -20% shock specifically. §30's other shocks
     # are simulated for information. Capping the WORST of them instead is
