@@ -95,6 +95,15 @@ class StrategyConfig:
     # How many units the permanent core holds. 1.0 is ALGORITHM.md §3. 0
     # makes this a pure premium-selling program with no Nasdaq exposure —
     # a different strategy, not a tuning of this one.
+    # When > 0 the core targets this FRACTION OF EQUITY instead of a fixed
+    # unit count. A fixed share count silently changes exposure as price
+    # moves — 100 QQQ was 16% of a $250k account in 2022 and is 29% today —
+    # so the risk taken drifts with the market rather than being chosen.
+    core_target_pct: float = field(
+        default_factory=lambda: _env_or(
+            "CORE_TARGET_PCT", _rule("instrument", "core_target_pct", 0.0), float
+        )
+    )
     core_units_target: float = field(
         default_factory=lambda: float(_rule("instrument", "core_units", 1.0))
     )
@@ -323,6 +332,13 @@ class StrategyConfig:
     )
     backtest_source: str = field(
         default_factory=lambda: str(_rule("backtest", "source", "alpaca"))
+    )
+    backtest_cash_interest: bool = field(
+        default_factory=lambda: bool(_rule("backtest", "cash_interest", True))
+    )
+    backtest_cash_interest_rate: float = field(
+        default_factory=lambda: _rule("backtest", "cash_interest_rate",
+                                      _rule("backtest", "risk_free_rate", 0.045))
     )
     polygon_use_quotes: bool = field(
         default_factory=lambda: bool(_rule("backtest", "polygon_use_quotes", False))

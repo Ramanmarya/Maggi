@@ -4,7 +4,9 @@
     "symbol": "QQQ",
     "core_unit_shares": 100,
     "_doc": "1 unit = 100 shares = 1 option contract's worth of underlying (ALGORITHM.md \u00a72).",
-    "core_units": 1.0
+    "core_units": 1.0,
+    "core_target_pct": 0.0,
+    "_core_target_pct_note": "0 keeps V5 \u00a72's fixed 1-unit core. A positive value sizes the core as that FRACTION OF EQUITY instead. Built 2026-09-03 after the 2022 backtest showed the fixed count silently changing the risk taken: 100 QQQ was 16% of a $250k account at 2022's $402 and is 29% at today's $717, so the exposure drifted with the market rather than being chosen. A percentage also buys more shares when QQQ is cheap and fewer when expensive, which is what \u00a715's exposure curve was reaching for and could never afford in shares."
   },
   "cadence": {
     "intraday_check_interval_minutes": 15,
@@ -151,7 +153,10 @@
     "_source_doc": "Which historical data backend the backtest reads: 'alpaca' (default) or 'polygon'. MEASURED 2026-09-03: Alpaca's option history begins 2024-02 \u2014 QQQ contracts expiring 2021-09, 2022-09 and 2023-09 all return zero bars \u2014 so the deepest window Alpaca can support contains no bear market. Polygon carries 5+ years on Options Advanced. The key currently in .env is on a rolling ~2-year plan and returns 403 NOT_AUTHORIZED before ~2024-09, so switching this to 'polygon' without upgrading buys nothing. Contract and expiry discovery via /v3/reference/options/contracts is NOT entitlement-gated and works on the current key, which is what makes the backend testable before paying.",
     "polygon_use_quotes": false,
     "_polygon_use_quotes_doc": "Fetch historical NBBO and use the measured bid/ask instead of costs.py's modelled spread. Requires Options Advanced ($199/mo) \u2014 the only tier carrying quotes. Costs one request per contract-day, cached permanently, so the first run of a window is slow and every rerun is free. When the plan lacks quotes the backend logs once and finishes on the modelled spread rather than aborting. Leave FALSE until subscribed.",
-    "_polygon_workers_note": "12 parallel fetchers. Measured on the upgraded options plan: 3.6 requests/sec single-threaded, 14.2 at 4 workers, 27.5 at 8, 40.0 at 16, with ZERO 429s at every level. That turns a ~220k request backfill from 16.5 hours into roughly 1.5-2. Set to 12 rather than 16 to leave headroom \u2014 the previous system once burned 9,455 calls into rate-limit errors, and the cost of being wrong here is a throttled account, not a slow one. Reads are parallel; cache writes stay single-threaded because sqlite connections are not shareable across threads."
+    "_polygon_workers_note": "12 parallel fetchers. Measured on the upgraded options plan: 3.6 requests/sec single-threaded, 14.2 at 4 workers, 27.5 at 8, 40.0 at 16, with ZERO 429s at every level. That turns a ~220k request backfill from 16.5 hours into roughly 1.5-2. Set to 12 rather than 16 to leave headroom \u2014 the previous system once burned 9,455 calls into rate-limit errors, and the cost of being wrong here is a throttled account, not a slow one. Reads are parallel; cache writes stay single-threaded because sqlite connections are not shareable across threads.",
+    "cash_interest": true,
+    "cash_interest_rate": 0.045,
+    "_cash_interest_doc": "Accrue interest on the idle cash balance. ON by default because OFF is simply wrong: a cash-secured put parks its collateral, it does not burn it, and this book runs ~70% cash. Modelling that at 0% understated config C by ~3%/yr \u2014 about a third of its measured return \u2014 which made every parameter comparison a comparison between two wrong numbers. Reported as a separate 'Cash interest' line so financing is never mistaken for edge. Rate defaults to backtest.risk_free_rate; a single fixed rate is an approximation over a window where the front end actually moved."
   },
   "cash_sweep": {
     "enabled": false,

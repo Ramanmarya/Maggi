@@ -53,6 +53,7 @@ class Ledger:
     positions: dict[str, Position] = field(default_factory=dict)
     realized_pnl: float = 0.0
     fills: list[Fill] = field(default_factory=list)
+    cash_interest: float = 0.0  # cumulative, reported separately from trading P&L
 
     # ---- core ------------------------------------------------------------
     def fill(
@@ -93,6 +94,30 @@ class Ledger:
         rec = Fill(day, symbol, qty, price, kind, reason, cash_delta, realized)
         self.fills.append(rec)
         return rec
+
+    # ---- financing -------------------------------------------------------
+    def accrue_cash_interest(self, days: float, annual_rate: float) -> float:
+        """Credit interest on the idle cash balance. Returns the amount.
+
+        A cash-secured put parks its collateral; it does not burn it. Modelling
+        that balance at 0% understates the strategy by most of the risk-free
+        rate, because the balance IS most of the portfolio — this book runs
+        ~70% cash, so 4.5% on collateral is worth ~3%/yr of total return. That
+        is not a rounding error, it is a third of the strategy's measured
+        return, and leaving it out makes every parameter comparison a
+        comparison between two wrong numbers.
+
+        Accrues on calendar days, not sessions: Treasury bills pay over
+        weekends. A negative balance is charged the same rate, which is
+        generous to a margin book and conservative for this one, since the
+        strategy is not supposed to run negative cash at all.
+        """
+        if days <= 0 or annual_rate == 0:
+            return 0.0
+        interest = self.cash * annual_rate * (days / 365.0)
+        self.cash += interest
+        self.cash_interest += interest
+        return interest
 
     # ---- valuation -------------------------------------------------------
     def market_value(self, prices: dict[str, float]) -> float:

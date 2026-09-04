@@ -70,7 +70,6 @@ class StrategyCycle:
 
     def run_daily_cycle(self) -> PortfolioState:
         state = self._load()
-        state.core_units = self._config.core_units_target
         today = self._broker.today()
 
         # 1. Pull market data
@@ -87,7 +86,12 @@ class StrategyCycle:
         total_delta = self._delta.total_unit_delta(snapshot)
         logger.info("Total unit-equivalent delta: %.3f", total_delta)
 
-        # 3b. Establish the core position (ALGORITHM.md 3, Engine A).
+        # 3b. Size the core. Sized off ACTUAL equity, never the risk-basis
+        # override: the core is a real purchase, and an inflated basis would
+        # have it buying shares the account cannot pay for.
+        state.core_units = self._core_units_target(snapshot.equity, price)
+
+        # 3c. Establish the core position (ALGORITHM.md 3, Engine A).
         # Nothing else in the strategy buys shares — put spreads only express
         # willingness to buy lower, and assignment is what converts them into
         # inventory. Without this the "permanent core" the whole design rests
@@ -170,6 +174,20 @@ class StrategyCycle:
         # 9. Persist state
         self._save(state)
         return state
+
+    def _core_units_target(self, equity: float, price: float) -> float:
+        """How many units the core should hold.
+
+        A fixed unit count means the exposure it represents drifts with price:
+        100 QQQ was 16% of a $250k account in 2022 and is 29% at today's $717.
+        A percentage target holds the RISK constant instead, which also buys
+        more shares when QQQ is cheap and fewer when it is expensive — the
+        behaviour the exposure curve was reaching for.
+        """
+        pct = self._config.core_target_pct
+        if pct <= 0 or price <= 0:
+            return self._config.core_units_target
+        return (equity * pct) / (price * self._config.core_unit_shares)
 
     def _should_open_put(
         self, state: PortfolioState, zone: float | None, wants_more: bool, today: date

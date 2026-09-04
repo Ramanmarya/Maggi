@@ -86,6 +86,9 @@ def run(start: date, end: date, starting_equity: float, verbose: bool,
     basis = config.equity_basis_override
     basis_text = f"${basis:,.2f} (override)" if basis else "live equity"
     print(f"  risk basis      {basis_text}")
+    print(f"  cash interest   "
+          + (f"{config.backtest_cash_interest_rate:.2%} on idle balance"
+             if config.backtest_cash_interest else "OFF (collateral earns 0%)"))
     logging.getLogger("qqq.cycle").setLevel(logging.ERROR)  # the override is reported once, above
     print()
 
@@ -95,8 +98,15 @@ def run(start: date, end: date, starting_equity: float, verbose: bool,
     errors: list[tuple[date, str]] = []
     max_errors = 0  # zero tolerance: one silent failure already cost a headline number
     curve: list[tuple[date, float]] = [(sessions[0] - timedelta(days=1), starting_equity)]
+    prev_day = sessions[0] - timedelta(days=1)
     for i, day in enumerate(sessions):
         broker.set_as_of(day)
+        if config.backtest_cash_interest:
+            # Accrue before the cycle trades, on the calendar gap since the
+            # last session, so collateral parked over a weekend is paid for it.
+            broker.ledger.accrue_cash_interest(
+                (day - prev_day).days, config.backtest_cash_interest_rate)
+        prev_day = day
         try:
             cycle.run_daily_cycle()
         except Exception as e:
@@ -137,6 +147,12 @@ def run(start: date, end: date, starting_equity: float, verbose: bool,
     metrics = compute(curve, broker.ledger, commission)
     print(f"\n{'='*62}\n  RESULTS\n{'='*62}")
     print(metrics.render())
+    interest = getattr(broker.ledger, "cash_interest", 0.0)
+    if interest:
+        # Reported apart from trading P&L: it is the financing line, and
+        # mistaking it for edge is how a cash-heavy book flatters itself.
+        print(f"  Cash interest        ${interest:,.2f}  "
+              f"({interest / starting_equity * 100:.2f}% of starting equity)")
     print(f"\n  data requests: {data.requests}   cache: {data.cache.stats()}")
     return metrics, curve, broker
 
