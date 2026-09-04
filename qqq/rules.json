@@ -8,7 +8,8 @@
   },
   "cadence": {
     "intraday_check_interval_minutes": 15,
-    "_doc": "Intraday passes are defensive only \u2014 crash-stress re-check and ex-div monitoring. They never open positions (\u00a710)."
+    "_doc": "Daily cycle at 06:35 PT = 09:35 ET, five minutes after the open (moved from 12:45 PT on 2026-09-03 at operator request). Not 09:30 exactly: the opening auction is the widest-spread period of the session and this engine SELLS the short leg, so it pays that spread directly on every entry. Intraday passes run at :00/:15/:30/:45, 27 per normal session, and are defensive only \u2014 they never open positions (\u00a710). NOTE: the backtest decides on daily CLOSE bars, so live decisions now use different prices than the tested ones; that divergence is unmeasured.",
+    "daily_cycle_local_time": "06:35 PT (09:35 ET)"
   },
   "ladder": {
     "atr_period_days": 20,
@@ -61,7 +62,8 @@
     "contracts_per_signal": 1,
     "_contracts_note": "KEEP AT 1. Swept 1-4 contracts over 626 sessions and the result is non-monotonic: edge over buy-and-hold ran $3,642 / $1,338 / $8,471 / $4,353 for 1/2/3/4, and Sharpe 1.06 / 0.90 / 1.04 / 1.00. The swing between adjacent settings exceeds the total edge of most of them, so this is path dependence \u2014 which spreads happened to be open when the market moved \u2014 not a size effect. 3 looks best on this sample and choosing it would be overfitting. 1 has the highest Sharpe and the lowest drawdown. Revisit only with more than one market sample.",
     "protective_leg_selection": "widest",
-    "_leg_selection_note": "'widest' takes the most premium the max-loss cap allows; 'best_risk_reward' takes the best loss-to-profit ratio. They differ because risk/reward is U-shaped in width \u2014 the best ratio on the 2026-09 chain is at width 7 (6.82:1) while the widest that fits at 1% is width 16 (8.33:1). Backtested: widest wins at both caps ($130,737 / $130,919 vs $130,326 for best_risk_reward at either). Why: with a 50% profit-capture exit the position is closed long before either extreme of the ratio is reached, so the credit collected matters more than a max-loss-to-max-profit figure the strategy almost never realises. Risk/reward is close to the wrong metric for this strategy."
+    "_leg_selection_note": "'widest' takes the most premium the max-loss cap allows; 'best_risk_reward' takes the best loss-to-profit ratio. They differ because risk/reward is U-shaped in width \u2014 the best ratio on the 2026-09 chain is at width 7 (6.82:1) while the widest that fits at 1% is width 16 (8.33:1). Backtested: widest wins at both caps ($130,737 / $130,919 vs $130,326 for best_risk_reward at either). Why: with a 50% profit-capture exit the position is closed long before either extreme of the ratio is reached, so the credit collected matters more than a max-loss-to-max-profit figure the strategy almost never realises. Risk/reward is close to the wrong metric for this strategy.",
+    "_dte_note": "21-35, unchanged \u2014 V5 \u00a79. Tested against a shorter window on the hypothesis that it would collect more premium; it collects LESS. Over 626 sessions at $250k with accumulation off: 5-14 DTE -> $13,057/yr gross premium, $932 net, Sharpe 0.99; 7-14 -> $13,594 / $1,061 / 1.00; 14-21 -> $17,423 / $1,632 / 1.03; 21-35 -> $19,756 / $1,626 / 1.03; 30-45 -> $21,963 / $1,606 / 0.99. Gross premium rises monotonically with DTE. The reason is that the number of spreads written is nearly constant across every window (79-84): TRADE COUNT IS GATED BY THE LADDER ZONES, NOT BY EXPIRY. Shortening the window therefore just collects less per trade at the same frequency. 14-21 is marginally ahead of 21-35 and statistically tied with it; kept at the spec's value. To collect more premium the lever is more entries, not shorter expiries."
   },
   "call_engine": {
     "dte_range": [

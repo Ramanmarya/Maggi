@@ -8,22 +8,28 @@
     <string>/Users/raman/Documents/Maggi/.venv/bin/python</string><string>-m</string><string>qqq.orchestrator</string>
     <string>--mode</string><string>daily</string>
   </array>
+  <key>WorkingDirectory</key><string>/Users/raman/Documents/Maggi</string>
   <key>EnvironmentVariables</key>
   <dict><key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string></dict>
-  <key>ThrottleInterval</key><integer>60</integer>
-  <key>ExitTimeOut</key><integer>120</integer>
-  <key>WorkingDirectory</key><string>/Users/raman/Documents/Maggi</string>
-  <!-- 12:45 PT = 15:45 ET, 15 minutes ahead of the close (ALGORITHM.md 10).
+
+  <!-- 06:35 PT = 09:35 ET, five minutes after the open.
+       Not 09:30 exactly: the opening auction is the widest-spread period of
+       the session, and this engine SELLS the short leg, so it pays that
+       spread directly on every entry. Five minutes lets the book settle
+       without giving up the session. This also matches the convention the
+       operator's previous system used for its own open-time jobs.
        Weekdays only; the orchestrator additionally asks Alpaca's clock and
        exits cleanly on holidays and early closes. -->
   <key>StartCalendarInterval</key>
   <array>
-    <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>12</integer><key>Minute</key><integer>45</integer></dict>
-    <dict><key>Weekday</key><integer>2</integer><key>Hour</key><integer>12</integer><key>Minute</key><integer>45</integer></dict>
-    <dict><key>Weekday</key><integer>3</integer><key>Hour</key><integer>12</integer><key>Minute</key><integer>45</integer></dict>
-    <dict><key>Weekday</key><integer>4</integer><key>Hour</key><integer>12</integer><key>Minute</key><integer>45</integer></dict>
-    <dict><key>Weekday</key><integer>5</integer><key>Hour</key><integer>12</integer><key>Minute</key><integer>45</integer></dict>
+    <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>6</integer><key>Minute</key><integer>35</integer></dict>
+    <dict><key>Weekday</key><integer>2</integer><key>Hour</key><integer>6</integer><key>Minute</key><integer>35</integer></dict>
+    <dict><key>Weekday</key><integer>3</integer><key>Hour</key><integer>6</integer><key>Minute</key><integer>35</integer></dict>
+    <dict><key>Weekday</key><integer>4</integer><key>Hour</key><integer>6</integer><key>Minute</key><integer>35</integer></dict>
+    <dict><key>Weekday</key><integer>5</integer><key>Hour</key><integer>6</integer><key>Minute</key><integer>35</integer></dict>
   </array>
+  <key>ThrottleInterval</key><integer>60</integer>
+  <key>ExitTimeOut</key><integer>120</integer>
   <key>StandardOutPath</key><string>/Users/raman/Documents/Maggi/logs/qqq_daily_launchd.log</string>
   <key>StandardErrorPath</key><string>/Users/raman/Documents/Maggi/logs/qqq_daily_launchd.log</string>
   <key>RunAtLoad</key><false/>
