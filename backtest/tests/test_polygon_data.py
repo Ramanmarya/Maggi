@@ -381,3 +381,33 @@ def test_merged_contract_listing_does_not_duplicate(tmp_path, monkeypatch):
     )
     rows = d.list_contracts(date(2022, 6, 15), date(2022, 7, 1), date(2022, 7, 31))
     assert len(rows) == 1, "the same ticker returned by both halves must appear once"
+
+
+def test_entitlement_gap_falls_back_but_a_missing_key_still_raises(tmp_path, monkeypatch):
+    """Two different failures that look identical at the HTTP layer.
+
+    An entitlement GAP is a fact about the data plan — the upgraded plan covers
+    options to 2020 while stocks stayed at two years — and the equity leg can
+    be served by Alpaca instead. A MISSING KEY is a configuration error, and
+    falling back there would hide it: the run would appear to work while
+    silently using a data source the operator did not choose.
+    """
+    from backtest.cache import BarCache
+    from backtest.polygon_data import PolygonEntitlementError, PolygonHistoricalData
+    from qqq.config import StrategyConfig
+
+    def refuse(self, path, params=None):
+        raise PolygonEntitlementError("plan does not cover this timeframe")
+
+    monkeypatch.setattr(PolygonHistoricalData, "_get", refuse, raising=False)
+    monkeypatch.setattr(PolygonHistoricalData, "_alpaca_equity_bars",
+                        lambda self, sym, s, e: [], raising=False)
+
+    with_key = StrategyConfig(alpaca_api_key="a", alpaca_secret_key="b", polygon_api_key="k")
+    d = PolygonHistoricalData(with_key, cache=BarCache(tmp_path / "gap.sqlite"))
+    assert d.load_underlying(date(2022, 1, 3), date(2022, 12, 30)) == []
+
+    without = StrategyConfig(alpaca_api_key="a", alpaca_secret_key="b", polygon_api_key="")
+    d2 = PolygonHistoricalData(without, cache=BarCache(tmp_path / "nokey.sqlite"))
+    with pytest.raises(PolygonEntitlementError):
+        d2.load_underlying(date(2022, 1, 3), date(2022, 12, 30))

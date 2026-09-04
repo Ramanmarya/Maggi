@@ -193,14 +193,66 @@ class PolygonHistoricalData:
         return _bars_from_aggs(resp)
 
     def load_underlying(self, start: date, end: date) -> list[Bar]:
+        """Underlying bars, from Polygon where entitled and Alpaca otherwise.
+
+        The upgraded plan covers OPTIONS deeply — aggregates and NBBO reach
+        2020 — while the STOCKS entitlement is unchanged at two years. So a
+        2022 backtest has every option it needs and cannot fetch the QQQ bars
+        underneath them, which failed the whole run on the underlying rather
+        than on anything to do with the strategy.
+
+        Alpaca serves those bars free back to 2020-07-27, so the equity leg
+        falls back to it. The cache is keyed by bare symbol and shared between
+        backends, so a bar fetched either way is reused by both.
+        """
         sym = self._config.symbol
         if not self.cache.have_range(sym, start, end):
             self._log(f"fetching {sym} bars {start}..{end}")
-            bars = self._fetch_equity_bars(sym, start, end)
+            try:
+                bars = self._fetch_equity_bars(sym, start, end)
+            except PolygonEntitlementError:
+                # An entitlement GAP is a fact about the data plan and the
+                # equity leg can be served elsewhere. A MISSING KEY is a
+                # configuration error, and falling back would hide it — the
+                # run would look like it worked while silently using a
+                # different data source than the operator asked for.
+                if not self._config.polygon_api_key:
+                    raise
+                self._log(
+                    f"Polygon stocks entitlement does not reach {start}; "
+                    f"falling back to Alpaca for the underlying"
+                )
+                bars = self._alpaca_equity_bars(sym, start, end)
             self.cache.put_bars(sym, bars)
             self.cache.mark_range(sym, start, end)
             self.cache.commit()
         return self.cache.bars(sym, start, end)
+
+    def _alpaca_equity_bars(self, symbol: str, start: date, end: date) -> list[Bar]:
+        """Daily bars from Alpaca. Free, IEX feed, reaching 2020-07-27."""
+        from datetime import datetime as _dt
+
+        from alpaca.data.enums import DataFeed
+        from alpaca.data.historical.stock import StockHistoricalDataClient
+        from alpaca.data.requests import StockBarsRequest
+        from alpaca.data.timeframe import TimeFrame
+
+        client = StockHistoricalDataClient(
+            api_key=self._config.alpaca_api_key, secret_key=self._config.alpaca_secret_key
+        )
+        resp = client.get_stock_bars(
+            StockBarsRequest(
+                symbol_or_symbols=symbol, timeframe=TimeFrame.Day,
+                start=_dt.combine(start, _dt.min.time()),
+                end=_dt.combine(end, _dt.max.time()),
+                feed=DataFeed.IEX,
+            )
+        )
+        self.requests += 1
+        return [
+            Bar(b.timestamp.date(), b.open, b.high, b.low, b.close, b.volume)
+            for b in (resp.data.get(symbol, []) if hasattr(resp, "data") else [])
+        ]
 
     def load_underlying_symbol(self, symbol: str, as_of: date) -> list[Bar]:
         """Daily bars for any equity, cached. Used by the cash sweep, which
@@ -210,7 +262,12 @@ class PolygonHistoricalData:
             try:
                 bars = self._fetch_equity_bars(symbol, start, as_of)
             except PolygonEntitlementError:
-                raise
+                if not self._config.polygon_api_key:
+                    raise
+                try:
+                    bars = self._alpaca_equity_bars(symbol, start, as_of)
+                except Exception:
+                    bars = []
             except Exception:
                 # One optional instrument must not abort a run; the sweep
                 # simply sees no price and stays in cash.
