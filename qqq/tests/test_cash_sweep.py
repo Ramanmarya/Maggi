@@ -27,6 +27,10 @@ def _cfg(**kw):
         cash_sweep_enabled=True, cash_sweep_symbol="SGOV",
         cash_sweep_buffer=5_000.0, cash_sweep_min_trade=1_000.0,
         equity_basis_override=150_000.0, max_aggregate_put_risk_pct=0.05,
+        # Pinned: these test the SPREAD reserve. Under a cash-secured
+        # structure the reserve is sized on collateral instead, which is
+        # covered by its own test below.
+        put_structure="spread",
     )
     return replace(base, **kw) if kw else base
 
@@ -176,3 +180,25 @@ def test_sweep_holding_is_not_counted_as_nasdaq_exposure():
         ],
     )
     assert agg.total_unit_delta(snap) == pytest.approx(1.0)
+
+
+def test_cash_secured_reserve_is_sized_on_collateral_not_spread_risk():
+    """Regression. Sized the spread way under a cash-secured structure, the
+    sweep moved $187,909 into Treasuries against a $42,590 collateral
+    requirement and the put engine wrote nothing at all — the sweep silently
+    disabled the strategy it was meant to fund."""
+    spread_cfg = _cfg(put_structure="spread")
+    csp_cfg = _cfg(put_structure="cash_secured", put_spread_contracts=1,
+                   cash_secured_reserve_positions=3)
+    spot = 717.22
+
+    spread_reserve = required_reserve(spread_cfg, 250_000.0, spot)
+    csp_reserve = required_reserve(csp_cfg, 250_000.0, spot)
+
+    assert csp_reserve > spread_reserve * 5, "collateral reserve must dwarf the spread reserve"
+    assert csp_reserve >= spot * 100 * 3, "must cover three contracts of collateral"
+
+
+def test_cash_secured_reserve_falls_back_safely_without_a_spot_price():
+    cfg = _cfg(put_structure="cash_secured")
+    assert required_reserve(cfg, 250_000.0, None) == required_reserve(_cfg(), 250_000.0)

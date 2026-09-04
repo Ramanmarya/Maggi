@@ -270,13 +270,17 @@ class AlpacaAdapter:
         from alpaca.trading.requests import LimitOrderRequest, OptionLegRequest
 
         if spread.long_leg is None:
-            # §8 forbids naked puts in the base strategy. The engine can only
-            # produce one when protective_leg is explicitly disabled for
-            # testing, so refuse rather than route it to a live account.
-            return OrderResult(
-                False, None, None, "rejected",
-                error="naked short put refused: §8 excludes them from the base strategy",
-            )
+            if self._config.put_structure != "cash_secured":
+                # §8 forbids naked puts in the base strategy. The engine can
+                # only produce one when protective_leg is disabled for
+                # testing, so refuse rather than route it to a live account.
+                return OrderResult(
+                    False, None, None, "rejected",
+                    error="naked short put refused: §8 excludes them from the base strategy",
+                )
+            # Cash-secured: collateral was verified by RiskManager before this
+            # call, so route it as a single short leg.
+            return self._submit_cash_secured_put(spread)
         legs = [
             OptionLegRequest(symbol=spread.short_leg.symbol, side=OrderSide.SELL, ratio_qty=1),
             OptionLegRequest(symbol=spread.long_leg.symbol, side=OrderSide.BUY, ratio_qty=1),
@@ -301,6 +305,32 @@ class AlpacaAdapter:
         except Exception as e:  # noqa: BLE001 — surface broker errors to the caller, don't crash the cycle
             logger.exception("submit_vertical_spread failed")
             return OrderResult(success=False, order_id=None, filled_avg_price=None, status="error", error=str(e))
+
+    def _submit_cash_secured_put(self, spread) -> OrderResult:
+        """One short put, collateralised by cash. Not a naked put: the strike
+        value is held, so assignment is always affordable and the broker
+        cannot liquidate the position mid-decline."""
+        from alpaca.trading.enums import OrderSide, TimeInForce
+        from alpaca.trading.requests import LimitOrderRequest
+
+        try:
+            req = LimitOrderRequest(
+                symbol=spread.short_leg.symbol,
+                qty=spread.contracts,
+                side=OrderSide.SELL,
+                time_in_force=TimeInForce.DAY,
+                limit_price=spread.limit_net_credit,
+                client_order_id=spread.client_order_id,
+            )
+            order = self._trading.submit_order(req)
+            return OrderResult(
+                success=True, order_id=str(order.id),
+                filled_avg_price=float(order.filled_avg_price) if order.filled_avg_price else None,
+                status=str(order.status),
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.exception("cash-secured put submission failed")
+            return OrderResult(False, None, None, "error", error=str(e))
 
     def submit_single_leg(self, order: SingleLegOrder) -> OrderResult:
         from alpaca.trading.enums import OrderSide, TimeInForce

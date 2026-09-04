@@ -84,7 +84,8 @@ class GatedBroker:
     def submit_vertical_spread(self, spread):
         refusal = self._blocked(
             "submit_vertical_spread",
-            f"{spread.underlying} {spread.short_leg.strike}/{spread.long_leg.strike} x{spread.contracts}",
+            f"{spread.underlying} {spread.short_leg.strike}"
+            f"/{spread.long_leg.strike if spread.long_leg else 'cash-secured'} x{spread.contracts}",
         )
         if refusal is not None:
             return refusal
@@ -93,7 +94,7 @@ class GatedBroker:
             action="submit_vertical_spread",
             underlying=spread.underlying,
             short_strike=spread.short_leg.strike,
-            long_strike=spread.long_leg.strike,
+            long_strike=spread.long_leg.strike if spread.long_leg else None,
             contracts=spread.contracts,
             limit_net_credit=spread.limit_net_credit,
         )

@@ -52,6 +52,9 @@ class FakeData:
     def load_option_bars(self, symbols, start, end):
         return None
 
+    def load_underlying_symbol(self, symbol, as_of):
+        return self.cache.bars(symbol, None, as_of)
+
     def chain(self, as_of, spot, dte_range, **kw):
         expiry = as_of + timedelta(days=(dte_range[0] + dte_range[1]) // 2)
         out = []
@@ -84,6 +87,10 @@ def setup(tmp_path: Path):
             StrategyConfig(alpaca_api_key="x", alpaca_secret_key="y"),
             state_file_path=tmp_path / "state.json",
             ladder_accumulate_shares_per_zone=0,
+            # Pinned: these exercise the spread execution path. The shipped
+            # structure is cash_secured, which writes one leg, not two.
+            put_structure="spread",
+            put_spread_short_delta_target=0.20,
         )
         broker = BacktestBroker(config, data, equity, CostModel())
         broker.prime(data.days[0], data.days[-1])

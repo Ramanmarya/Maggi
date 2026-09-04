@@ -47,6 +47,8 @@ class PutSpreadEngine:
         self, short_leg: OptionContract, long_leg: OptionContract
     ) -> tuple[float, float, float] | None:
         """Return (net_credit, max_loss, risk_reward) or None if there is no credit."""
+        if long_leg is None:
+            return None  # economics of an unspread put are governed elsewhere
         credit = (short_leg.bid + short_leg.ask) / 2 - (long_leg.bid + long_leg.ask) / 2
         if credit <= 0:
             return None
@@ -259,9 +261,9 @@ class PutSpreadEngine:
                 PutSpreadPosition(
                     id=result.order_id or order.client_order_id,
                     short_strike=order.short_leg.strike,
-                    long_strike=order.long_leg.strike,
+                    long_strike=order.long_leg.strike if order.long_leg else 0.0,
                     short_symbol=order.short_leg.symbol,
-                    long_symbol=order.long_leg.symbol,
+                    long_symbol=order.long_leg.symbol if order.long_leg else "",
                     expiry=order.short_leg.expiry.isoformat(),
                     contracts=order.contracts,
                     net_credit=order.limit_net_credit or 0.0,
