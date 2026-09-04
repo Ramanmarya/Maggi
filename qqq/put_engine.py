@@ -152,18 +152,25 @@ class PutSpreadEngine:
             return None
         price = self._broker.get_underlying_price()
         contracts = max(1, self._config.put_spread_contracts)
-        long_leg = self._select_long_leg(chain, short_leg, equity, state, price, contracts)
-        if long_leg is None:
-            return None
+        if self._config.put_protective_leg:
+            long_leg = self._select_long_leg(chain, short_leg, equity, state, price, contracts)
+            if long_leg is None:
+                return None
+        else:
+            long_leg = None  # §39 Q1 only — naked, no floor under the short put
 
-        net_credit = (short_leg.bid + short_leg.ask) / 2 - (long_leg.bid + long_leg.ask) / 2
+        long_mid = (long_leg.bid + long_leg.ask) / 2 if long_leg else 0.0
+        net_credit = (short_leg.bid + short_leg.ask) / 2 - long_mid
         if net_credit <= 0:
             return None  # never pay to open a "credit" spread
 
         # §12: risk/reward quality filter (max_loss / max_profit).
-        width = short_leg.strike - long_leg.strike
         unit = self._config.core_unit_shares
-        max_loss = width * unit - net_credit * unit
+        if long_leg is not None:
+            width = short_leg.strike - long_leg.strike
+            max_loss = width * unit - net_credit * unit
+        else:
+            max_loss = short_leg.strike * unit - net_credit * unit  # strike to zero
         max_profit = net_credit * unit
         if max_profit <= 0:
             return None
@@ -180,7 +187,7 @@ class PutSpreadEngine:
 
         check = self._risk.check_all_for_new_put_spread(
             short_strike=short_leg.strike,
-            long_strike=long_leg.strike,
+            long_strike=long_leg.strike if long_leg else 0.0,
             net_credit=net_credit,
             contracts=contracts,
             equity=equity,

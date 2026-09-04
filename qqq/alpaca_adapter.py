@@ -269,6 +269,14 @@ class AlpacaAdapter:
         from alpaca.trading.enums import OrderClass, OrderSide, TimeInForce
         from alpaca.trading.requests import LimitOrderRequest, OptionLegRequest
 
+        if spread.long_leg is None:
+            # §8 forbids naked puts in the base strategy. The engine can only
+            # produce one when protective_leg is explicitly disabled for
+            # testing, so refuse rather than route it to a live account.
+            return OrderResult(
+                False, None, None, "rejected",
+                error="naked short put refused: §8 excludes them from the base strategy",
+            )
         legs = [
             OptionLegRequest(symbol=spread.short_leg.symbol, side=OrderSide.SELL, ratio_qty=1),
             OptionLegRequest(symbol=spread.long_leg.symbol, side=OrderSide.BUY, ratio_qty=1),

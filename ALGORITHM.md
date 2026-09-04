@@ -224,6 +224,32 @@ crash-stress test and ex-dividend monitoring, but never open new positions.
 
 Implementation: `qqq/cycle.py`, driven one-shot by `qqq/orchestrator.py`.
 
+## 12b. §15 and §31 are mutually incompatible on a $100k account
+
+This is a contradiction inside the source document, not in the translation.
+
+§31 caps portfolio loss under a −20% shock at 15–20% of equity. That is a
+cap on *exposure*, and it resolves to a hard number:
+
+```
+0.20 × Exposure ≤ 0.15 × $100,000   ->   Exposure ≤ $75,000
+```
+
+§15's target-exposure curve asks for up to 3.25 units in a deep decline. In
+MNQ that is 3.25 × $58,116 = **$188,877**, which loses $37,775 under a −20%
+shock — **38% of equity**, roughly double what §31 permits.
+
+**The exposure curve can never be reached without violating the crash-stress
+cap.** This is true in MNQ and in QQQ; §31 caps by risk, not by capital, so
+leverage does not relax it. $75,000 of exposure is 1.29 MNQ contracts or 105
+QQQ shares — about one unit either way.
+
+Everything observed in testing follows from this: the ladder gating an
+accumulation that can never happen, Engine C starved of excess inventory,
+and the exposure curve behaving as decoration. The two sections need
+reconciling before either can be trusted — either §15's curve comes down, or
+§31's cap goes up, or the account is larger than the one both were written for.
+
 ## 12a. Two errors in the MNQ → QQQ translation
 
 Found 2026-09-03 by reading the original V5 document rather than the

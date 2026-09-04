@@ -55,11 +55,13 @@ class RiskManager:
         for s in open_spreads:
             if s.status != "OPEN":
                 continue
-            width = abs(s.short_strike - s.long_strike)
-            max_loss = (
-                width * self._config.core_unit_shares
-                - s.net_credit * self._config.core_unit_shares
-            ) * s.contracts
+            unit = self._config.core_unit_shares
+            if s.long_strike and s.long_strike > 0:
+                width = abs(s.short_strike - s.long_strike)
+                max_loss = (width * unit - s.net_credit * unit) * s.contracts
+            else:
+                # A naked put's maximum loss is the strike going to zero.
+                max_loss = (s.short_strike * unit - s.net_credit * unit) * s.contracts
             total += max_loss
 
         cap = equity * self._config.max_aggregate_put_risk_pct
@@ -105,11 +107,19 @@ class RiskManager:
             for s in open_spreads:
                 if s.status != "OPEN":
                     continue
-                width = abs(s.short_strike - s.long_strike)
-                # Conservative: assume worst case is full width minus credit received
-                max_loss = (width * unit_size - s.net_credit * unit_size) * s.contracts
-                if shocked_price < s.short_strike:
-                    scenario_loss += max_loss
+                if shocked_price >= s.short_strike:
+                    continue
+                if s.long_strike and s.long_strike > 0:
+                    # Defined risk: the long leg caps the loss at the width.
+                    width = abs(s.short_strike - s.long_strike)
+                    max_loss = (width * unit_size - s.net_credit * unit_size) * s.contracts
+                else:
+                    # NAKED short put — no floor. The loss keeps growing with
+                    # the shock, which is the entire reason §8 excludes them
+                    # from the base strategy and why this gate exists.
+                    intrinsic = (s.short_strike - shocked_price) * unit_size
+                    max_loss = (intrinsic - s.net_credit * unit_size) * s.contracts
+                scenario_loss += max(0.0, max_loss)
 
             for c in open_calls:
                 if c.status != "OPEN":

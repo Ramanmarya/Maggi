@@ -200,17 +200,25 @@ class BacktestBroker:
     def submit_vertical_spread(self, spread: VerticalSpreadOrder) -> OrderResult:
         day = self._as_of
         short_mid = (spread.short_leg.bid + spread.short_leg.ask) / 2
-        long_mid = (spread.long_leg.bid + spread.long_leg.ask) / 2
         short_px = self._costs.option_fill_price(short_mid, "sell")
-        long_px = self._costs.option_fill_price(long_mid, "buy")
-
         self.ledger.fill(day, spread.short_leg.symbol, -spread.contracts, short_px, "option", "open_spread_short")
-        self.ledger.fill(day, spread.long_leg.symbol, spread.contracts, long_px, "option", "open_spread_long")
-        self.ledger.cash -= self._costs.option_commission(spread.contracts * 2)
+
+        # long_leg is None only in naked mode (§39 Q1); the base strategy
+        # always pairs the short put with a protective long one.
+        long_px = 0.0
+        legs = 1
+        if spread.long_leg is not None:
+            long_mid = (spread.long_leg.bid + spread.long_leg.ask) / 2
+            long_px = self._costs.option_fill_price(long_mid, "buy")
+            self.ledger.fill(day, spread.long_leg.symbol, spread.contracts, long_px, "option", "open_spread_long")
+            legs = 2
+        self.ledger.cash -= self._costs.option_commission(spread.contracts * legs)
 
         order_id = f"bt-spread-{uuid.uuid4().hex[:8]}"
         self._spread_legs[order_id] = (
-            spread.short_leg.symbol, spread.long_leg.symbol, spread.contracts
+            spread.short_leg.symbol,
+            spread.long_leg.symbol if spread.long_leg is not None else None,
+            spread.contracts,
         )
         return OrderResult(True, order_id, short_px - long_px, "filled")
 
@@ -249,9 +257,12 @@ class BacktestBroker:
 
         short_sym, long_sym, contracts = legs
         prices = self.mark_prices()
-        self._data.load_option_bars([short_sym, long_sym], self._as_of - timedelta(days=3), self._as_of)
+        self._data.load_option_bars([x for x in (short_sym, long_sym) if x], self._as_of - timedelta(days=3), self._as_of)
         total = 0.0
-        for sym, qty, side in ((short_sym, contracts, "buy"), (long_sym, -contracts, "sell")):
+        pairs = [(short_sym, contracts, "buy")]
+        if long_sym is not None:
+            pairs.append((long_sym, -contracts, "sell"))
+        for sym, qty, side in pairs:
             if sym not in self.ledger.positions:
                 continue
             bar = self._data.cache.bar_on(sym, self._as_of)
@@ -259,7 +270,7 @@ class BacktestBroker:
             px = self._costs.option_fill_price(mid, side)
             self.ledger.fill(self._as_of, sym, qty, px, "option", "close_spread")
             total += px if side == "buy" else -px
-        self.ledger.cash -= self._costs.option_commission(contracts * 2)
+        self.ledger.cash -= self._costs.option_commission(contracts * (2 if long_sym else 1))
         del self._spread_legs[position_id]
         return OrderResult(True, position_id, total, "closed")
 

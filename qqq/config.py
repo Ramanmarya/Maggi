@@ -185,6 +185,13 @@ class StrategyConfig:
     # the max-loss cap: "widest" takes the most premium the cap allows,
     # "best_risk_reward" takes the best loss-to-profit ratio. They differ
     # because risk/reward is U-shaped in width, not monotonic.
+    # False writes NAKED short puts — Rajat's structure, and explicitly not
+    # part of V5's base strategy (§8: "Naked puts are NOT part of the base
+    # strategy"). Exists only to answer §39 Q1: does the protective leg cost
+    # more in premium than it saves in tail risk?
+    put_protective_leg: bool = field(
+        default_factory=lambda: bool(_rule("put_engine", "protective_leg", True))
+    )
     put_spread_leg_selection: str = field(
         default_factory=lambda: str(_rule("put_engine", "protective_leg_selection", "widest"))
     )
