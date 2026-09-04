@@ -33,28 +33,40 @@ class SweepResult:
     reason: str
 
 
-def required_reserve(config, equity: float) -> float:
+def required_reserve(config, equity: float, spot: float | None = None) -> float:
     """Cash the options program must always be able to reach.
 
-    Sized as the aggregate put-risk cap (every open spread could lose its
-    maximum at once) plus a buffer for a single assignment and ordinary
-    settlement timing. Deliberately generous: the cost of holding too much
-    cash is a few dollars of forgone yield, while the cost of holding too
-    little is a forced liquidation at the worst possible moment.
+    For SPREADS this is the aggregate put-risk cap — every open spread could
+    lose its maximum at once — plus a buffer for an assignment and ordinary
+    settlement timing.
+
+    For CASH-SECURED PUTS it is a different and much larger number: the whole
+    structure is defined by holding the strike in cash, so the reserve must
+    cover the collateral for every position the engine may open. Sizing this
+    the spread way swept $187,909 into Treasuries and left $17,522 against a
+    $42,590 collateral requirement, so the engine wrote nothing at all — the
+    sweep silently disabled the strategy it was meant to fund.
+
+    Deliberately generous either way: holding too much cash costs a few
+    dollars of yield, holding too little forces a liquidation at the worst
+    possible moment or, as here, stops the strategy trading.
     """
     basis = config.equity_basis_override or equity
+    if getattr(config, "put_structure", "spread") == "cash_secured" and spot:
+        contracts = max(1, config.put_spread_contracts) * config.cash_secured_reserve_positions
+        return spot * config.core_unit_shares * contracts + config.cash_sweep_buffer
     return basis * config.max_aggregate_put_risk_pct + config.cash_sweep_buffer
 
 
 def plan(config, cash: float, equity: float, sweep_price: float | None,
-         sweep_held: float) -> SweepResult:
+         sweep_held: float, spot: float | None = None) -> SweepResult:
     """Decide the sweep trade. Pure — no I/O — so it is directly testable."""
     if not config.cash_sweep_enabled:
         return SweepResult("hold", 0, "sweep disabled")
     if not sweep_price or sweep_price <= 0:
         return SweepResult("hold", 0, "no price for the sweep instrument")
 
-    reserve = required_reserve(config, equity)
+    reserve = required_reserve(config, equity, spot)
     excess = cash - reserve
 
     # Hysteresis. Without a dead band the sweep buys whenever cash is a dollar
@@ -91,7 +103,8 @@ def execute(broker, config, snapshot) -> SweepResult:
         p.qty for p in snapshot.positions
         if p.asset_class == "equity" and p.symbol == symbol
     )
-    result = plan(config, snapshot.cash, snapshot.equity, price, held)
+    underlying = broker.equity_price(config.symbol)
+    result = plan(config, snapshot.cash, snapshot.equity, price, held, underlying)
     if result.action == "hold" or result.shares < 1:
         return result
 

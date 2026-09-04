@@ -26,6 +26,28 @@ class RiskManager:
     def __init__(self, config: StrategyConfig):
         self._config = config
 
+    def check_cash_secured(
+        self, short_strike: float, contracts: int, available_cash: float
+    ) -> RiskCheckResult:
+        """Collateral gate for an unspread short put.
+
+        §10's per-position cap is (short - long) x multiplier — a *width*
+        formula with no meaning when there is no long leg. Capping an
+        unspread put by its strike-to-zero loss refuses every one of them, so
+        the governing controls become the two that do apply: enough cash to
+        take assignment, and §31's portfolio shock test. That is precisely how
+        the CBOE PutWrite index is collateralised, and it is why a
+        cash-secured put is not the naked put §8 excludes.
+        """
+        required = short_strike * self._config.core_unit_shares * contracts
+        if required > available_cash:
+            return RiskCheckResult(
+                False,
+                f"Cash-secured put needs ${required:,.2f} of collateral, "
+                f"${available_cash:,.2f} available.",
+            )
+        return RiskCheckResult(True)
+
     def check_spread_max_loss(
         self,
         short_strike: float,

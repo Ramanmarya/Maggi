@@ -159,12 +159,16 @@ class PutSpreadEngine:
             return None
         price = self._broker.get_underlying_price()
         contracts = max(1, self._config.put_spread_contracts)
-        if self._config.put_protective_leg:
+        cash_secured = self._config.put_structure == "cash_secured"
+        if self._config.put_protective_leg and not cash_secured:
             long_leg = self._select_long_leg(chain, short_leg, equity, state, price, contracts)
             if long_leg is None:
                 return None
         else:
-            long_leg = None  # §39 Q1 only — naked, no floor under the short put
+            # cash_secured: no long leg, full strike held in cash.
+            # naked (protective_leg False): no long leg and no collateral —
+            # §39 Q1 testing only, refused by the live adapter.
+            long_leg = None
 
         long_mid = (long_leg.bid + long_leg.ask) / 2 if long_leg else 0.0
         net_credit = (short_leg.bid + short_leg.ask) / 2 - long_mid
@@ -182,8 +186,16 @@ class PutSpreadEngine:
         if max_profit <= 0:
             return None
         risk_reward = max_loss / max_profit
+        # §12's risk/reward filter is a SPREAD quality metric: max loss comes
+        # from §10's (short - long) x multiplier, so the ratio is meaningful
+        # only when there is a long leg. An unspread put scores 140:1 on
+        # strike-to-zero and still 25:1 against the -20% shock, so applying it
+        # refuses every cash-secured put ever proposed. Cash-secured positions
+        # are governed by collateral and §31's portfolio shock test instead —
+        # which is exactly how the CBOE PutWrite index is controlled.
         if (
-            self._config.put_spread_max_risk_reward_ratio is not None
+            not cash_secured
+            and self._config.put_spread_max_risk_reward_ratio is not None
             and risk_reward > self._config.put_spread_max_risk_reward_ratio
         ):
             return None
@@ -191,6 +203,31 @@ class PutSpreadEngine:
         # §11 left sizing open. The count is configurable; RiskManager enforces
         # the per-spread and aggregate caps regardless of it, so a size that is
         # too large is refused rather than silently taken.
+
+        if cash_secured:
+            cash = getattr(self._broker.get_current_positions(), "cash", 0.0)
+            collateral = self._risk.check_cash_secured(short_leg.strike, contracts, cash)
+            if not collateral.passed:
+                return None
+            # Only the portfolio shock test applies; §10's width cap does not.
+            stress = self._risk.check_crash_stress(
+                price,
+                state.open_put_spreads + [
+                    PutSpreadPosition(
+                        id="__prospective__", short_strike=short_leg.strike, long_strike=0.0,
+                        expiry=short_leg.expiry.isoformat(), contracts=contracts,
+                        net_credit=net_credit, opened_at="",
+                    )
+                ],
+                state.open_calls, state.core_units, equity,
+            )
+            if not stress.passed:
+                return None
+            return VerticalSpreadOrder(
+                underlying=self._config.symbol, short_leg=short_leg, long_leg=None,
+                contracts=contracts, limit_net_credit=round(net_credit * 0.95, 2),
+                client_order_id=f"csp-{uuid.uuid4().hex[:10]}",
+            )
 
         check = self._risk.check_all_for_new_put_spread(
             short_strike=short_leg.strike,

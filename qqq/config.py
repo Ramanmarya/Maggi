@@ -195,6 +195,14 @@ class StrategyConfig:
     # part of V5's base strategy (§8: "Naked puts are NOT part of the base
     # strategy"). Exists only to answer §39 Q1: does the protective leg cost
     # more in premium than it saves in tail risk?
+    # "spread" is V5 §8's default. "cash_secured" sells an unspread put with
+    # the full strike value held in cash — NOT the naked put §8 excludes: same
+    # maximum loss, but assignment is always affordable and the broker can
+    # never liquidate the position mid-decline. It is also the only structure
+    # that can deliver inventory, which Engines A and C both depend on.
+    put_structure: str = field(
+        default_factory=lambda: str(_rule("put_engine", "structure", "spread"))
+    )
     put_protective_leg: bool = field(
         default_factory=lambda: bool(_rule("put_engine", "protective_leg", True))
     )
@@ -268,6 +276,11 @@ class StrategyConfig:
     )
     cash_sweep_buffer: float = field(
         default_factory=lambda: float(_rule("cash_sweep", "reserve_buffer", 5000.0))
+    )
+    # How many cash-secured positions the sweep must keep collateral for.
+    # Only consulted when put_structure is "cash_secured".
+    cash_secured_reserve_positions: int = field(
+        default_factory=lambda: int(_rule("cash_sweep", "cash_secured_reserve_positions", 3))
     )
     cash_sweep_min_trade: float = field(
         default_factory=lambda: float(_rule("cash_sweep", "min_trade", 1000.0))
