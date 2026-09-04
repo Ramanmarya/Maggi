@@ -141,7 +141,7 @@ class StrategyCycle:
         wants_more = should_add_exposure(
             self._config, state.reference_price, price, total_delta
         )
-        if self._should_open_put(state, zone, wants_more, today):
+        if self._should_open_put(state, zone, wants_more, today, equity):
             # Accumulate inventory by BUYING SHARES, not by waiting for
             # assignment. A defined-risk spread assigns the short leg and
             # exercises the long leg for a net of zero shares, so §7's
@@ -149,12 +149,26 @@ class StrategyCycle:
             # Buying outright keeps the spreads defined-risk and still gets
             # the accumulation the exposure curve is built around.
             state = self._accumulate_shares(state, snapshot, price, target_exposure, total_delta)
-            order = self._puts.propose_spread(state, equity, state.current_regime)
-            if order is not None:
+            # Continuous mode may add several positions per session; every
+            # other mode opens at most one, exactly as before.
+            budget = (
+                self._config.continuous_max_new_per_session
+                if self._config.put_entry_mode == "continuous" else 1
+            )
+            for _ in range(max(1, budget)):
+                order = self._puts.propose_spread(state, equity, state.current_regime)
+                if order is None:
+                    break
+                if (self._config.put_entry_mode == "continuous"
+                        and not self._expiry_has_room(state, order.short_leg.expiry.isoformat())):
+                    break     # would stack this expiry; wait for another session
                 state = self._puts.submit(state, order)
                 state.last_put_entry = today.isoformat()
                 if zone is not None:
                     state = self._ladder.mark_zone_filled(state, zone, today)
+                    zone = None
+                if not self._should_open_put(state, None, False, today, equity):
+                    break
         state = self._puts.manage_existing(state, today)
 
         # 6. Call engine pass
@@ -224,8 +238,32 @@ class StrategyCycle:
             return self._config.core_units_target
         return (equity * pct) / (price * self._config.core_unit_shares)
 
+    def deployment(self, state: PortfolioState, equity: float) -> float:
+        """Fraction of this arm's capital currently pledged as put collateral.
+
+        Cash-secured means the strike is the money at stake, so collateral —
+        not premium, not delta — is what the book is actually using up.
+        """
+        if equity <= 0:
+            return 1.0     # unknown equity: treat as fully deployed, add nothing
+        unit = self._config.core_unit_shares
+        pledged = sum(
+            s.short_strike * unit * s.contracts
+            for s in state.open_put_spreads
+            if s.status == "OPEN" and not s.long_strike
+        )
+        return pledged / equity
+
+    def _expiry_has_room(self, state: PortfolioState, expiry: str) -> bool:
+        held = sum(
+            1 for s in state.open_put_spreads
+            if s.status == "OPEN" and s.expiry == expiry
+        )
+        return held < self._config.continuous_max_per_expiry
+
     def _should_open_put(
-        self, state: PortfolioState, zone: float | None, wants_more: bool, today: date
+        self, state: PortfolioState, zone: float | None, wants_more: bool, today: date,
+        equity: float | None = None,
     ) -> bool:
         """Decide whether to attempt a put entry this cycle.
 
@@ -242,6 +280,13 @@ class StrategyCycle:
         """
         mode = self._config.put_entry_mode
         ladder_ok = zone is not None and wants_more
+        if mode == "continuous":
+            # Deployment, not price action, decides. The risk gates in
+            # PutSpreadEngine still bound every individual trade, so this
+            # changes how often the engine ASKS, never what it may have.
+            if equity is None:
+                return False
+            return self.deployment(state, equity) < self._config.continuous_target_deployment
         if mode == "ladder":
             return ladder_ok
 

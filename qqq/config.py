@@ -166,8 +166,16 @@ class StrategyConfig:
     )
 
     # --- Persistence ---
+    # Derived from the ARM, not hardcoded. Both arms defaulted to
+    # state/qqq_state.json, so the GLD arm read QQQ's open positions into its
+    # own risk gates -- 706-strike puts on an underlying trading at $176 --
+    # and would have written its own positions back over the live QQQ state.
+    # The explicit env var still wins, for one-off runs.
     state_file_path: Path = field(
-        default_factory=lambda: Path(os.getenv("STATE_FILE_PATH", PROJECT_ROOT / "state" / "qqq_state.json"))
+        default_factory=lambda: Path(
+            os.getenv("STATE_FILE_PATH")
+            or PROJECT_ROOT / "state" / f"{_rule('instrument', 'arm', 'qqq')}_state.json"
+        )
     )
 
     # --- Ladder (§5) ---
@@ -262,6 +270,27 @@ class StrategyConfig:
     )
     put_min_days_between_entries: int = field(
         default_factory=lambda: int(_rule("put_engine", "min_days_between_entries", 7))
+    )
+    # --- Continuous rolling (entry_mode "continuous") ------------------
+    # The ladder only fires when price touches an unused rung, so in a flat
+    # or rising market both arms sat in cash: the GLD arm held 4 puts where
+    # collateral allowed 14, and 90% of its return was T-bill interest.
+    # Continuous mode instead keeps the book at a TARGET DEPLOYMENT, which
+    # is a fraction of capital rather than a position count so it adapts to
+    # price and account size on its own.
+    continuous_target_deployment: float = field(
+        default_factory=lambda: _env_or("TARGET_DEPLOYMENT",
+            _rule("put_engine", "continuous_target_deployment", 0.60), float)
+    )
+    # Entering the whole book in one session would date every position to the
+    # same tape and roll them together forever after.
+    continuous_max_new_per_session: int = field(
+        default_factory=lambda: int(_rule("put_engine", "continuous_max_new_per_session", 2))
+    )
+    # Cap positions sharing one expiry, so the book ladders through time
+    # instead of maturing in a single cliff.
+    continuous_max_per_expiry: int = field(
+        default_factory=lambda: int(_rule("put_engine", "continuous_max_per_expiry", 2))
     )
     put_structure: str = field(
         default_factory=lambda: _env_or(

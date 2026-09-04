@@ -113,3 +113,31 @@ def test_gld_sells_cash_secured_not_spreads():
     """A spread cannot be assigned, so a spread-based wheel never acquires
     the gold it is meant to wheel."""
     assert StrategyConfig.for_arm("gld").put_structure == "cash_secured"
+
+
+# ------------------------------------------------------------- state isolation
+
+def test_each_arm_has_its_own_state_file():
+    """THE bug this suite exists for. Both arms defaulted to
+    state/qqq_state.json, so the GLD arm loaded QQQ's open positions into its
+    risk gates -- 706-strike puts against an underlying trading at $176 --
+    and would have written its own book back over the live QQQ state file.
+    Backtest harnesses passed an explicit path, which masked it completely."""
+    q = StrategyConfig.for_arm("qqq").state_file_path
+    g = StrategyConfig.for_arm("gld").state_file_path
+    assert q != g, f"both arms share {q}"
+    assert "gld" in g.name and "qqq" in q.name
+
+
+def test_state_path_follows_the_arm_not_the_symbol():
+    """Naming off `symbol` would collide the moment two arms trade the same
+    underlying with different parameters."""
+    g = StrategyConfig.for_arm("gld")
+    assert g.state_file_path.name.startswith(g.arm)
+
+
+def test_explicit_env_override_still_wins(monkeypatch, tmp_path):
+    """One-off runs and tests must still be able to redirect state."""
+    target = tmp_path / "explicit.json"
+    monkeypatch.setenv("STATE_FILE_PATH", str(target))
+    assert StrategyConfig.for_arm("gld").state_file_path == target

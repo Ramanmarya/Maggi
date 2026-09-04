@@ -114,3 +114,43 @@ def test_the_arm_never_buys_gld_outright(tmp_path):
     buys = [f for f in broker.ledger.fills
             if f.kind == "equity" and f.qty > 0 and f.reason != "assignment"]
     assert not buys, f"GLD arm bought shares outright: {buys[:2]}"
+
+
+# ------------------------------------------------------- continuous rolling
+
+def test_continuous_deploys_more_than_the_ladder(tmp_path):
+    """The reason continuous mode exists. On a FLAT path the ladder never
+    touches a rung, so it writes almost nothing and the arm earns T-bills."""
+    lad, _, _ = _run(tmp_path, FLAT, "clad", put_entry_mode="ladder")
+    con, _, _ = _run(tmp_path, FLAT, "ccon", put_entry_mode="continuous",
+                     continuous_target_deployment=0.60)
+    nl = len([f for f in lad.ledger.fills if f.kind == "option"])
+    nc = len([f for f in con.ledger.fills if f.kind == "option"])
+    assert nc > nl, f"continuous ({nc}) did not out-trade the ladder ({nl}) on a flat path"
+
+
+def test_continuous_still_respects_the_crash_stress_cap(tmp_path):
+    """Deploying more must not mean deploying past the gates."""
+    b, _, _ = _run(tmp_path, DIP, "ccap", put_entry_mode="continuous",
+                   continuous_target_deployment=0.95, max_crash_stress_pct=0.0001)
+    fills = [f for f in b.ledger.fills if f.kind == "option"]
+    assert not fills, f"a 0.01% cap still allowed {len(fills)} fills in continuous mode"
+
+
+def test_continuous_never_overdraws_cash(tmp_path):
+    """Cash-secured means every open put is fully collateralised. Asking for
+    95% deployment must not write puts the account cannot cover."""
+    b, _, raised = _run(tmp_path, FLAT, "ccash", put_entry_mode="continuous",
+                        continuous_target_deployment=0.95)
+    assert not raised
+    assert b.ledger.cash >= -1e-6, f"cash went negative: {b.ledger.cash:,.2f}"
+
+
+def test_a_higher_target_deploys_at_least_as_much(tmp_path):
+    low, _, _ = _run(tmp_path, FLAT, "clo", put_entry_mode="continuous",
+                     continuous_target_deployment=0.20)
+    high, _, _ = _run(tmp_path, FLAT, "chi", put_entry_mode="continuous",
+                      continuous_target_deployment=0.70)
+    nlo = len([f for f in low.ledger.fills if f.kind == "option"])
+    nhi = len([f for f in high.ledger.fills if f.kind == "option"])
+    assert nhi >= nlo, f"70% target ({nhi}) traded less than 20% ({nlo})"
