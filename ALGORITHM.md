@@ -224,6 +224,36 @@ crash-stress test and ex-dividend monitoring, but never open new positions.
 
 Implementation: `qqq/cycle.py`, driven one-shot by `qqq/orchestrator.py`.
 
+## 12c. Sizing the account to the strategy
+
+§15 and §31 (see §12b) are incompatible at $100,000 and compatible at
+$250,000. The exposure curve was never sized for the smaller account:
+
+| account | §15's 3.25 units | loss under a −20% shock | vs §31's 15–20% |
+|---|---|---|---|
+| $100,000 | $233,096 (QQQ) | 46.6% of equity | breaches badly |
+| **$250,000** | $233,096 | **18.6% of equity** | **inside the band** |
+
+At $250,000 the crash-stress cap stops binding altogether — a sweep of
+10/15/18/20% produced byte-identical results, because 254 shares loses 14.6%
+of equity under a −20% shock and the real constraints become the ladder zones
+and available cash. **So the cap should not be raised**; raising it buys
+nothing and removes a backstop that costs nothing to keep.
+
+Accumulation inverts at this size. At $100,000 it converted alpha into beta.
+At $250,000, over the same 626 sessions:
+
+| | $/yr | max DD | Sharpe |
+|---|---|---|---|
+| strategy, accumulation off | $12,648 | 4.81% | 1.03 |
+| **strategy, accumulation on** | **$28,746** | **9.84%** | **1.08** |
+| buy & hold 250 shares | $27,080 | 11.26% | 0.99 |
+| buy & hold 325 shares | $35,203 | 14.28% | 0.99 |
+
+Higher return, *lower* drawdown and higher Sharpe than the equivalent beta.
+The capital is finally sufficient to carry the exposure the curve asks for,
+which is the condition under which the whole design was supposed to work.
+
 ## 12b. §15 and §31 are mutually incompatible on a $100k account
 
 This is a contradiction inside the source document, not in the translation.
