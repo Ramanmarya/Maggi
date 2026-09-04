@@ -57,15 +57,24 @@ def plan(config, cash: float, equity: float, sweep_price: float | None,
     reserve = required_reserve(config, equity)
     excess = cash - reserve
 
-    if excess >= sweep_price:
+    # Hysteresis. Without a dead band the sweep buys whenever cash is a dollar
+    # over the reserve and sells whenever it is a dollar under, which in
+    # backtest produced a buy and a sell of the same size on alternate days,
+    # every day, paying the spread each time for no yield at all.
+    band = config.cash_sweep_min_trade
+
+    if excess >= sweep_price and excess >= band:
         shares = int(excess // sweep_price)
         # Ignore trivial rebalances; the commission-free spread still costs
         # something and churn has no upside at this yield.
-        if shares * sweep_price < config.cash_sweep_min_trade:
+        if shares * sweep_price < band:
             return SweepResult("hold", 0, f"excess ${excess:,.0f} below minimum trade")
         return SweepResult("buy", shares, f"${excess:,.0f} above the ${reserve:,.0f} reserve")
 
-    if excess < 0 and sweep_held > 0:
+    # Only sell once cash is a full band BELOW the reserve, not the instant it
+    # dips under, so the buy and sell thresholds cannot straddle a single day's
+    # cash movement.
+    if excess < -band and sweep_held > 0:
         # Cash has dipped under the reserve — sell just enough to restore it.
         needed = int(min(sweep_held, (-excess) // sweep_price + 1))
         if needed > 0:

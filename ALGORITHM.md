@@ -224,6 +224,41 @@ crash-stress test and ex-dividend monitoring, but never open new positions.
 
 Implementation: `qqq/cycle.py`, driven one-shot by `qqq/orchestrator.py`.
 
+## 12a. Two errors in the MNQ → QQQ translation
+
+Found 2026-09-03 by reading the original V5 document rather than the
+translation. Both are material.
+
+**MNQ is a future; the translation dropped the leverage.** V5 §2 sizes the
+core as 1 MNQ — $58,116 of Nasdaq exposure (29,058 × $2) tying up roughly
+$2,500 of margin. §15's exposure curve then asks for up to 3.25 units in a
+deep decline: about $189,000 of exposure on ~$8,125 of margin, entirely
+routine on a $100,000 account. Translating that to 100 QQQ *shares* preserved
+the exposure and silently discarded the leverage the curve depends on. Shares
+must be bought outright, so 3.25 units means $233,000 of cash. **The maximum
+reachable on $100,000 in shares is 1.39 units.** §15's curve is unreachable
+past a −5% decline, which is why accumulation testing showed it converting
+alpha into beta: in shares it *is* just beta. Alpaca offers no futures, so
+this cannot be fixed within this broker — it is a property of the instrument
+choice, and it caps what the QQQ implementation can ever earn.
+
+**§31's cap binds on the −20% shock, not the worst shock.** §30 says to
+simulate −5/−10/−15/−20/−30%. §31 then caps the loss *"under an additional
+instantaneous −20% shock"* at 15–20% of equity. The implementation took the
+worst of all five and capped that — materially stricter than specified, and
+strict enough that the core alone breached it at QQQ 717 and no spread could
+be written at all. That breach is what prompted a $150,000 equity-basis
+override and a 20% cap, both of which were solving a limit the specification
+never set. Corrected: the cap binds on the −20% case and the deeper shocks are
+still simulated and reported so the tail stays visible.
+
+With the correction, every override was removed — caps size against true
+equity, crash-stress is 15% (§31's lower bound), per-spread loss is 1% (§10) —
+and the backtest is unchanged: $130,714 versus $130,919, same Sharpe, same
+drawdown, same 79 spreads. The spec's own rules also select a *better* trade:
+a 7-wide spread at 6.82:1 risk/reward rather than the 26-wide at 9.88:1 the
+loosened caps produced.
+
 ## 12. Additions beyond the source document
 
 These are not in the V5 doc. They are recorded here so the difference between

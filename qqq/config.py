@@ -224,6 +224,12 @@ class StrategyConfig:
     max_crash_stress_pct: float = field(
         default_factory=lambda: _rule("risk", "max_crash_stress_pct", 0.15)
     )
+    # §31 caps the loss under a -20% shock specifically. §30's other shocks
+    # are simulated for information. Capping the WORST of them instead is
+    # materially stricter than the specification.
+    crash_stress_binding_shock: float = field(
+        default_factory=lambda: float(_rule("risk", "crash_stress_binding_shock", -0.20))
+    )
     crash_stress_shocks: tuple[float, ...] = field(
         default_factory=lambda: tuple(_rule("risk", "crash_stress_shocks", [-0.05, -0.10, -0.15, -0.20, -0.30]))
     )

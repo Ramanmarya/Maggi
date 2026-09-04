@@ -143,6 +143,11 @@ class BacktestBroker:
         prices: dict[str, float] = {}
         spot = self.get_underlying_price()
         prices[self._config.symbol] = spot
+        for pos in self.ledger.positions.values():
+            if pos.kind == "equity" and pos.symbol != self._config.symbol:
+                px = self.equity_price(pos.symbol)
+                if px is not None:
+                    prices[pos.symbol] = px
         held = [p.symbol for p in self.ledger.open_options()]
         if held:
             self._data.load_option_bars(held, self._as_of - timedelta(days=3), self._as_of)
@@ -166,6 +171,17 @@ class BacktestBroker:
         equity = self.ledger.equity(prices)
         positions = []
         for pos in self.ledger.positions.values():
+            # Only the arm's own instrument reaches the strategy, matching the
+            # live adapter. Without this the cash-sweep's 452 SGOV shares were
+            # counted as 4.52 units of QQQ exposure, which put total delta far
+            # above the target curve and silently stopped every spread.
+            own = (
+                pos.symbol == self._config.symbol
+                or pos.symbol.startswith(self._config.symbol)
+                or pos.symbol == self._config.cash_sweep_symbol
+            )
+            if not own:
+                continue
             px = prices.get(pos.symbol, pos.avg_price)
             positions.append(
                 PositionSnapshot(
@@ -202,7 +218,14 @@ class BacktestBroker:
         day = self._as_of
         signed = order.qty if order.side == "buy" else -order.qty
         if order.contract is None:
-            px = self._costs.equity_fill_price(self.get_underlying_price(), order.side)
+            # Price by the symbol being traded, not by the arm's underlying.
+            # This filled SGOV at QQQ's price the moment the cash sweep began
+            # trading an instrument other than QQQ.
+            ref = self.equity_price(order.symbol)
+            if ref is None:
+                return OrderResult(False, None, None, "error",
+                                   error=f"no price for {order.symbol}")
+            px = self._costs.equity_fill_price(ref, order.side)
             self.ledger.fill(day, order.symbol, signed, px, "equity", "share_order")
             self.ledger.cash -= self._costs.equity_commission(order.qty)
         else:

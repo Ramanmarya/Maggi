@@ -80,9 +80,9 @@
     "_doc": "\u00a78 QQQ-specific. Refuse a call straddling ex-div whose extrinsic value is below 1.25x the dividend \u2014 that is when early assignment becomes rational for the holder. MNQ has no equivalent."
   },
   "risk": {
-    "max_loss_per_spread_pct": 0.02,
+    "max_loss_per_spread_pct": 0.01,
     "max_aggregate_put_risk_pct": 0.05,
-    "max_crash_stress_pct": 0.2,
+    "max_crash_stress_pct": 0.15,
     "crash_stress_shocks": [
       -0.05,
       -0.1,
@@ -93,10 +93,11 @@
     "daily_loss_limit_pct": 0.06,
     "max_drawdown_pct": 0.25,
     "_doc": "\u00a79 gates 1-3 are max_loss_per_spread / max_aggregate_put_risk / max_crash_stress. The doc allows crash-stress up to 0.20; 0.15 is the stricter default. daily_loss_limit_pct and max_drawdown_pct drive core/circuit_breaker.py and are NOT from the source doc \u2014 they are platform-level backstops. Both are set wide because equity here includes the mark-to-market of a core position the strategy is designed to hold through corrections; a tight daily limit would trip the breaker in exactly the drawdown the ladder wants to buy.",
-    "equity_basis_override": 150000,
-    "_equity_basis_note": "OPERATOR OVERRIDE, set 2026-09-03. When non-null, every risk gate in ALGORITHM.md 9 sizes against this figure instead of live account equity. Set to 150000 while the paper account holds ~100k, deliberately, because a 100-share QQQ core at ~$717 is 72% of a 100k account and the -30% crash-stress shock alone breaches the 15% cap, so no spread could ever open. This makes the caps ~50% larger than the account can actually absorb: a loss the gates consider acceptable can exceed what the account holds. Acceptable on paper; set back to null before any real money. The circuit breaker is NOT affected - it still measures true equity.",
-    "_crash_stress_note": "0.20 set 2026-09-03, at ALGORITHM.md 9's stated maximum ('worst case must stay <= 15% of equity; doc allows up to 20%'). Raised from 0.15 because at QQQ ~717 the 100-share core alone consumes $21,528 of a $22,500 budget, leaving $972 against a ~$1,429 spread \u2014 the arm could write nothing at all. At 0.20 the full 5-spread ceiling is reachable. STATE THE REAL COST: the equity_basis_override already inflates every cap by 50%, so 20% of the 150k basis is 28.7% of ACTUAL ~100k equity once 5 spreads are open. A -30% QQQ move would cost about $28,673 against roughly $100k. Acceptable on paper and explicitly accepted by the operator; revert BOTH this and the basis override before any real money.",
-    "_max_loss_per_spread_note": "0.02, raised from ALGORITHM.md 9's 0.01 on 2026-09-03 at operator request. Backtested over 626 sessions: 1% -> $130,737 / Sharpe 1.05 / overlay $3,867; 2% -> $130,919 / Sharpe 1.05 / overlay $4,049. Better, but by $182 over two and a half years \u2014 inside noise, and drawdown is identical at 11.21%. The real effect is on trade shape, not returns: at 2% the engine writes 26-wide spreads (credit $2.39, max loss $2,361) instead of 16-wide ($1.71 / $1,428), so fewer positions fit under the 5% aggregate cap. Note this does NOT improve risk/reward \u2014 it worsens it, 8.33:1 to 9.88:1, because risk/reward is U-shaped in width and a larger budget makes the engine go wider."
+    "equity_basis_override": null,
+    "_equity_basis_note": "REMOVED 2026-09-03, and the reason matters. It was introduced because the core breached the crash-stress cap and no spread could be written. That breach was an implementation error, not a real limit: V5 \u00a731 caps the loss under a -20% shock, while the code capped the WORST of \u00a730's -5/-10/-15/-20/-30% shocks. Under the actual rule the core loses 14.3% of real equity, inside the 15% cap, and no override is needed. Caps now size against true account equity.",
+    "_crash_stress_note": "0.15, the lower end of V5 \u00a731's stated 15-20% band, binding against the -20% shock as \u00a731 specifies. \u00a730's deeper shocks are still simulated and reported so the tail stays visible.",
+    "_max_loss_per_spread_note": "0.01, back to V5 \u00a710's hard limit. It was briefly 0.02, which is outside \u00a736's own test range of 0.5/0.75/1/1.5% and gave up more per-trade risk than the spec contemplates.",
+    "crash_stress_binding_shock": -0.2
   },
   "backtest": {
     "risk_free_rate": 0.045,

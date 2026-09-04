@@ -52,19 +52,43 @@ class PutSpreadEngine:
         return credit, max_loss, max_loss / max_profit
 
     def _within_caps(
-        self, short_leg: OptionContract, long_leg: OptionContract, equity: float
+        self, short_leg: OptionContract, long_leg: OptionContract, equity: float,
+        state: PortfolioState | None = None, underlying_price: float | None = None,
+        contracts: int = 1,
     ) -> bool:
+        """Would this exact spread clear every gate?
+
+        When `state` is supplied this runs the full §9 battery, including the
+        portfolio crash-stress test — not just the per-spread cap. Leg
+        selection has to know about the portfolio budget, or it picks the
+        widest leg that fits the per-spread cap, the portfolio gate rejects
+        it, and the engine gives up having never tried a narrower one. §10 is
+        explicit about the order: "narrow spread, change strikes, obtain
+        better credit, OR reject trade" — rejecting is the last resort.
+        """
         econ = self._spread_economics(short_leg, long_leg)
         if econ is None:
             return False
-        _, max_loss, risk_reward = econ
+        credit, max_loss, risk_reward = econ
         if max_loss > equity * self._config.max_loss_per_spread_pct:
             return False
         rr_cap = self._config.put_spread_max_risk_reward_ratio
-        return rr_cap is None or risk_reward <= rr_cap
+        if rr_cap is not None and risk_reward > rr_cap:
+            return False
+        if state is None or underlying_price is None:
+            return True
+        return self._risk.check_all_for_new_put_spread(
+            short_strike=short_leg.strike, long_strike=long_leg.strike,
+            net_credit=credit, contracts=contracts, equity=equity,
+            existing_open_spreads=state.open_put_spreads,
+            underlying_price=underlying_price, core_units=state.core_units,
+            open_calls=state.open_calls,
+        ).passed
 
     def _select_long_leg(
-        self, chain: list[OptionContract], short_leg: OptionContract, equity: float | None = None
+        self, chain: list[OptionContract], short_leg: OptionContract, equity: float | None = None,
+        state: PortfolioState | None = None, underlying_price: float | None = None,
+        contracts: int = 1,
     ) -> OptionContract | None:
         """§7: protective put at ~5 delta, "or a strike necessary to satisfy the
         maximum-loss rule".
@@ -94,10 +118,15 @@ class PutSpreadEngine:
 
         target = -self._config.put_spread_protective_delta_target
         by_delta = min(candidates, key=lambda c: abs(c.delta - target))
-        if equity is None or self._within_caps(short_leg, by_delta, equity):
+        if equity is None or self._within_caps(
+            short_leg, by_delta, equity, state, underlying_price, contracts
+        ):
             return by_delta
 
-        fitting = [c for c in candidates if self._within_caps(short_leg, c, equity)]
+        fitting = [
+            c for c in candidates
+            if self._within_caps(short_leg, c, equity, state, underlying_price, contracts)
+        ]
         if not fitting:
             return None
 
@@ -121,7 +150,9 @@ class PutSpreadEngine:
         short_leg = self._select_short_leg(chain)
         if short_leg is None:
             return None
-        long_leg = self._select_long_leg(chain, short_leg, equity)
+        price = self._broker.get_underlying_price()
+        contracts = max(1, self._config.put_spread_contracts)
+        long_leg = self._select_long_leg(chain, short_leg, equity, state, price, contracts)
         if long_leg is None:
             return None
 
@@ -146,7 +177,6 @@ class PutSpreadEngine:
         # §11 left sizing open. The count is configurable; RiskManager enforces
         # the per-spread and aggregate caps regardless of it, so a size that is
         # too large is refused rather than silently taken.
-        contracts = max(1, self._config.put_spread_contracts)
 
         check = self._risk.check_all_for_new_put_spread(
             short_strike=short_leg.strike,
@@ -155,7 +185,7 @@ class PutSpreadEngine:
             contracts=contracts,
             equity=equity,
             existing_open_spreads=state.open_put_spreads,
-            underlying_price=self._broker.get_underlying_price(),
+            underlying_price=price,
             core_units=state.core_units,
             open_calls=state.open_calls,
         )

@@ -250,9 +250,13 @@ def test_crash_stress_counts_the_spread_being_proposed():
     # Pins its own 15% cap: this test is about the off-by-one mechanic, not
     # about whatever the strategy is currently tuned to. Reading the live
     # value makes it fail on a retune, which is a false alarm.
-    cfg = _cfg(equity_basis_override=None, max_crash_stress_pct=0.15)
+    cfg = _cfg(equity_basis_override=None, max_crash_stress_pct=0.15,
+               crash_stress_binding_shock=-0.20)
     risk = RiskManager(cfg)
-    basis, price = 150_000.0, 717.59
+    # Sized so the core alone fits under the -20% shock (§31's binding case)
+    # and the core plus one spread does not — which is exactly the boundary
+    # the off-by-one used to slip through.
+    basis, price = 100_000.0, 717.59
 
     # Core alone fits; core plus one spread does not.
     assert risk.check_crash_stress(price, [], [], 1.0, basis).passed is True

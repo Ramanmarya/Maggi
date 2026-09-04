@@ -92,6 +92,8 @@ class RiskManager:
         """
         unit_size = self._config.core_unit_shares
         worst_case_loss = 0.0
+        binding_loss = 0.0
+        binding = self._config.crash_stress_binding_shock
 
         for shock in self._config.crash_stress_shocks:
             shocked_price = underlying_price * (1 + shock)
@@ -117,13 +119,20 @@ class RiskManager:
                     scenario_loss += max(0.0, intrinsic_loss - c.premium_received * unit_size * c.contracts)
 
             worst_case_loss = max(worst_case_loss, scenario_loss)
+            if abs(shock - binding) < 1e-9:
+                binding_loss = scenario_loss
 
+        # §31 caps the loss under the -20% shock. The deeper shocks in §30 are
+        # simulated so the tail is visible, not so the cap binds on them —
+        # capping the worst of them is a materially stricter rule than the
+        # specification, and strict enough here to stop the arm trading at all.
         cap = equity * self._config.max_crash_stress_pct
-        if worst_case_loss > cap:
+        if binding_loss > cap:
             return RiskCheckResult(
                 False,
-                f"Worst-case crash-stress loss ${worst_case_loss:,.2f} exceeds cap "
-                f"${cap:,.2f} ({self._config.max_crash_stress_pct:.1%} of equity).",
+                f"Crash-stress loss ${binding_loss:,.2f} under a {binding:.0%} shock exceeds "
+                f"cap ${cap:,.2f} ({self._config.max_crash_stress_pct:.1%} of equity). "
+                f"Worst modelled shock would lose ${worst_case_loss:,.2f}.",
             )
         return RiskCheckResult(True)
 

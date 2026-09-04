@@ -35,6 +35,11 @@ class DeltaAggregator:
         total = 0.0
         for pos in snapshot.positions:
             if pos.asset_class == "equity":
+                # The cash-sweep instrument is a cash equivalent, not Nasdaq
+                # exposure. Counting it would read a Treasury ETF as a long
+                # QQQ position and shut the put engine down completely.
+                if pos.symbol == getattr(self._config, "cash_sweep_symbol", None):
+                    continue
                 total += pos.qty / unit_size
             elif pos.asset_class == "option":
                 delta = self._broker.option_delta(pos.symbol)
