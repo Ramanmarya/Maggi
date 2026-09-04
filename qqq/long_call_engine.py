@@ -126,7 +126,7 @@ class LongCallEngine:
         if not result.success:
             logger.warning("Long call rejected: %s", result.error)
             return state
-        fill = result.filled_price if result.filled_price else order.limit_price
+        fill = result.filled_avg_price if result.filled_avg_price else order.limit_price
         state.open_long_calls.append(LongCallPosition(
             id=order.client_order_id, symbol=order.symbol,
             strike=float(order.contract.strike),
@@ -183,7 +183,7 @@ class LongCallEngine:
             res = self._broker.submit_single_leg(order)
             if res.success:
                 c.status = "CLOSED"
-                c.close_price = float(res.filled_price or mark)
+                c.close_price = float(res.filled_avg_price or mark)
                 c.closed_at = today.isoformat()
                 pl = (c.close_price - c.premium_paid) * self._config.core_unit_shares * c.contracts
                 logger.info("Long call %s closed at $%.2f (%s$%.0f)", c.id,

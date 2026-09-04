@@ -17,6 +17,7 @@ make results depend on the operator's current settings.
 from __future__ import annotations
 
 import argparse
+import os
 import logging
 import sys
 from datetime import date, datetime, timedelta
@@ -59,8 +60,12 @@ def _make_data(config, source: str, verbose: bool, use_quotes: bool | None):
 
 def run(start: date, end: date, starting_equity: float, verbose: bool,
         state_path: Path | None = None, source: str | None = None,
-        use_quotes: bool | None = None) -> tuple:
-    config = StrategyConfig()
+        use_quotes: bool | None = None, arm: str | None = None) -> tuple:
+    # A backtest scopes its own capital through --starting-equity, so the
+    # arm is given the whole of it. Reading allocator.json here would size a
+    # study against whatever the live book happens to be running today.
+    os.environ.setdefault("ARM_ALLOCATION", "1.0")
+    config = StrategyConfig.for_arm(arm) if arm else StrategyConfig()
     source = source or config.backtest_source
 
     # Isolated state file: a backtest must never touch live trading state.
@@ -133,7 +138,7 @@ def run(start: date, end: date, starting_equity: float, verbose: bool,
         curve.append((day, equity))
         if verbose or i % 21 == 0 or i == len(sessions) - 1:
             spot = broker.get_underlying_price()
-            print(f"  {day}  QQQ {spot:>7.2f}  equity ${equity:>12,.2f}  "
+            print(f"  {day}  {config.symbol:<4}{spot:>7.2f}  equity ${equity:>12,.2f}  "
                   f"cash ${broker.ledger.cash:>11,.2f}  pos {len(broker.ledger.positions)}")
 
     commission = sum(
@@ -169,6 +174,8 @@ def main() -> int:
     ap.add_argument("--end", required=True, help="YYYY-MM-DD")
     ap.add_argument("--starting-equity", type=float, default=100_000.0)
     ap.add_argument("--verbose", action="store_true")
+    ap.add_argument("--arm", default=None,
+                    help="arm name; loads arms/<arm>/rules.json (default: qqq/rules.json)")
     ap.add_argument("--source", choices=("alpaca", "polygon"), default=None,
                     help="historical data backend (default: rules.json backtest.source). "
                          "alpaca reaches 2024-02; polygon reaches 5y on Options Advanced")
@@ -180,7 +187,7 @@ def main() -> int:
     a = ap.parse_args()
     run(datetime.strptime(a.start, "%Y-%m-%d").date(),
         datetime.strptime(a.end, "%Y-%m-%d").date(),
-        a.starting_equity, a.verbose, source=a.source, use_quotes=a.quotes)
+        a.starting_equity, a.verbose, source=a.source, use_quotes=a.quotes, arm=a.arm)
     return 0
 
 

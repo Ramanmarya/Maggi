@@ -56,6 +56,31 @@ def _rule(section: str, key: str, default):
     return _R.get(section, {}).get(key, default)
 
 
+def load_rules(path) -> dict:
+    """Swap the module-level rules a StrategyConfig() will read.
+
+    The dataclass resolves every field through _rule() at construction, so
+    swapping _R and constructing inside that window is what makes one process
+    able to build configs for several arms. Restored on the way out: a leaked
+    swap would have the next arm silently reading the previous arm's rules.
+    """
+    global _R, RULES_PATH
+    import contextlib
+
+    @contextlib.contextmanager
+    def _ctx():
+        global _R, RULES_PATH
+        prev_r, prev_p = _R, RULES_PATH
+        try:
+            RULES_PATH = Path(path)
+            with RULES_PATH.open() as f:
+                _R = json.load(f)
+            yield
+        finally:
+            _R, RULES_PATH = prev_r, prev_p
+    return _ctx()
+
+
 def _env_or(name: str, value, cast=None):
     raw = os.getenv(name)
     if raw is None:
@@ -88,7 +113,18 @@ def _exposure_curve() -> dict:
 @dataclass(frozen=True)
 class StrategyConfig:
     # --- Identity / instrument (§2) ---
+    # Which arm this config belongs to. Drives allocator lookup and state
+    # file naming, so two arms cannot read each other's positions.
+    arm: str = field(default_factory=lambda: _rule("instrument", "arm", "qqq"))
     symbol: str = field(default_factory=lambda: _rule("instrument", "symbol", "QQQ"))
+    # Explicit share of capital, bypassing allocator.json. A BACKTEST sets
+    # this to 1.0 because --starting-equity already scopes the arm's money;
+    # reading the live allocator there would size a study against whatever
+    # the production book happens to be running today.
+    allocation_override: float | None = field(
+        default_factory=lambda: _env_or("ARM_ALLOCATION", None,
+                                        lambda v: float(v) if v not in (None, "") else None)
+    )
     core_unit_shares: int = field(
         default_factory=lambda: _env_or("CORE_UNIT_SHARES", _rule("instrument", "core_unit_shares", 100), int)
     )
@@ -105,7 +141,9 @@ class StrategyConfig:
         )
     )
     core_units_target: float = field(
-        default_factory=lambda: float(_rule("instrument", "core_units", 1.0))
+        default_factory=lambda: _env_or(
+            "CORE_UNITS_TARGET", _rule("instrument", "core_units", 1.0), float
+        )
     )
 
     # --- Alpaca connection ---
@@ -181,7 +219,9 @@ class StrategyConfig:
         default_factory=lambda: tuple(_rule("put_engine", "dte_range", [21, 35]))
     )
     put_spread_short_delta_target: float = field(
-        default_factory=lambda: _rule("put_engine", "short_delta_target", 0.20)
+        default_factory=lambda: _env_or(
+            "PUT_SHORT_DELTA", _rule("put_engine", "short_delta_target", 0.20), float
+        )
     )
     put_spread_protective_delta_target: float = field(
         default_factory=lambda: _rule("put_engine", "protective_delta_target", 0.05)
@@ -425,3 +465,25 @@ class StrategyConfig:
         if self.call_dte_range[0] > self.call_dte_range[1]:
             problems.append("call_engine.dte_range is inverted (min > max).")
         return problems
+
+    @classmethod
+    def for_arm(cls, arm: str) -> "StrategyConfig":
+        """Build the config for a named arm from arms/<arm>/rules.json."""
+        path = PROJECT_ROOT / "arms" / arm / "rules.json"
+        if not path.exists():
+            # The original layout put the only arm's rules at qqq/rules.json,
+            # and the live bot still reads that path. Honour it rather than
+            # moving a file the running scheduler depends on.
+            legacy = PROJECT_ROOT / arm / "rules.json"
+            if not legacy.exists():
+                raise FileNotFoundError(f"no rules for arm '{arm}' at {path}")
+            path = legacy
+        with load_rules(path):
+            cfg = cls()
+        if cfg.arm != arm:
+            raise ValueError(
+                f"arms/{arm}/rules.json declares instrument.arm='{cfg.arm}'. "
+                "The mismatch would point state and allocator lookups at the wrong arm."
+            )
+        return cfg
+

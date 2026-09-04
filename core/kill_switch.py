@@ -93,3 +93,26 @@ def trip(reason: str, path: Path | None = None) -> None:
 
     atomic_write_text(path or TRADING_ENABLED_PATH, "false\n")
     event("kill_switch_tripped", reason=reason)
+
+
+def allocation_pct(arm: str = "qqq", allocator_path: Path | None = None) -> float:
+    """Fraction of total capital this arm may size against, from allocator.json.
+
+    Without this every arm sizes against the WHOLE account: two arms at 50%
+    each would both gate as if they owned 100%, and between them commit twice
+    the capital that exists. Fails CLOSED at 0.0 -- an arm with no readable
+    allocation trades nothing rather than helping itself to everything.
+    """
+    data = read_json(allocator_path or ALLOCATOR_PATH, default=None)
+    if not isinstance(data, dict):
+        return 0.0
+    alloc = data.get("allocations", {}).get(arm)
+    if not isinstance(alloc, dict):
+        return 0.0
+    try:
+        pct = float(alloc.get("pct", 0))
+    except (TypeError, ValueError):
+        return 0.0
+    if not 0 <= pct <= 100:
+        return 0.0
+    return pct / 100.0

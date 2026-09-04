@@ -44,6 +44,7 @@ class StrategyCycle:
         self._puts = PutSpreadEngine(broker, config, self._risk)
         self._calls = HybridCallEngine(broker, config, self._risk)
         self._long_calls = LongCallEngine(broker, config)
+        self._alloc_cache: float | None = None
 
     def _load(self) -> PortfolioState:
         return load_state(self._config.state_file_path)
@@ -61,14 +62,37 @@ class StrategyCycle:
         """
         override = self._config.equity_basis_override
         if not override:
-            return actual_equity
+            return actual_equity * self._allocation()
         logger.warning(
             "RISK BASIS OVERRIDE: gates sizing against $%s, not the actual $%s. "
             "Caps are %.0f%% of what this account can absorb.",
             f"{override:,.2f}", f"{actual_equity:,.2f}",
             actual_equity / override * 100,
         )
-        return float(override)
+        return float(override) * self._allocation()
+
+    def _allocation(self) -> float:
+        """This arm's share of the account, per allocator.json.
+
+        Every arm sizing against the full balance is how a two-arm book
+        commits 200% of the capital it has. Cached per cycle so a mid-cycle
+        edit to allocator.json cannot change sizing between two gates in the
+        same run.
+        """
+        if self._alloc_cache is None:
+            override = self._config.allocation_override
+            if override is not None:
+                self._alloc_cache = float(override)
+                return self._alloc_cache
+            from core.kill_switch import allocation_pct
+            self._alloc_cache = allocation_pct(self._config.arm)
+            if self._alloc_cache <= 0:
+                logger.warning(
+                    "Arm '%s' has no usable allocation in allocator.json — sizing against $0, "
+                    "so nothing will open. Add an allocations.%s.pct entry.",
+                    self._config.arm, self._config.arm,
+                )
+        return self._alloc_cache
 
     def run_daily_cycle(self) -> PortfolioState:
         state = self._load()

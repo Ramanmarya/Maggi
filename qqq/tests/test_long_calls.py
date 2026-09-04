@@ -123,3 +123,17 @@ def test_state_round_trips_long_calls():
 
 def test_state_written_before_long_calls_still_loads():
     assert PortfolioState.from_dict({"core_units": 1.0}).open_long_calls == []
+
+
+def test_engine_reads_the_real_orderresult_field():
+    """OrderResult exposes filled_avg_price, not filled_price. The wrong name
+    raises AttributeError inside the cycle only once an order actually fills,
+    so unit tests with no broker never reach it."""
+    import inspect
+    from qqq.broker_adapter import OrderResult
+    from dataclasses import fields
+    names = {f.name for f in fields(OrderResult)}
+    src = inspect.getsource(LongCallEngine)
+    assert "filled_avg_price" in src
+    assert "filled_price" not in src.replace("filled_avg_price", "")
+    assert "filled_avg_price" in names
