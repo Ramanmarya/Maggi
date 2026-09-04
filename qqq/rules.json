@@ -167,5 +167,19 @@
     "min_trade": 1000.0,
     "_doc": "DISABLED 2026-09-03 at operator request. Kept in the codebase, tested, and switchable. It earned roughly $823/yr at $100k on idle cash, but it also collided badly with the cash-secured put structure: sized on spread risk it swept $187,909 into Treasuries against a $42,590 collateral requirement and the put engine wrote nothing at all. The reserve is now structure-aware, but with the sweep off that interaction cannot bite. Re-enable only after deciding the put structure, not before.",
     "cash_secured_reserve_positions": 3
+  },
+  "long_call": {
+    "enabled": false,
+    "dte_range": [
+      14,
+      21
+    ],
+    "delta_target": 0.35,
+    "contracts": 1,
+    "max_open": 2,
+    "annual_budget_pct": 0.02,
+    "profit_multiple": 2.0,
+    "close_dte": 3,
+    "_doc": "BOUGHT calls, 2-3 weeks out. Every other engine here SELLS premium and so earns the variance risk premium; this one pays it, which makes it negative expected value in isolation and a directional bet on continued upside, not an income source. Off by default. annual_budget_pct is the load-bearing gate: 2% of equity = $5,000/yr on $250k, the most that can be lost to expiries finishing out of the money. Longs are held in state.open_long_calls, never open_calls, because RiskManager reads that list as SHORT calls -- unlimited loss above the strike and share coverage required -- and a long call is the opposite on both counts."
   }
 }

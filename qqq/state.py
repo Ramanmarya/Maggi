@@ -52,11 +52,35 @@ class CallPosition:
 
 
 @dataclass
+class LongCallPosition:
+    """A PURCHASED call. Deliberately not a CallPosition.
+
+    RiskManager treats every entry in open_calls as SHORT -- it prices
+    unlimited loss above the strike and demands share coverage. A long call
+    is the opposite in both respects: its loss is bounded at the premium
+    paid, it needs no coverage, and its delta is +. Filing one in open_calls
+    would invert the sign of both the shock test and the coverage check, so
+    longs live in their own list.
+    """
+    id: str
+    symbol: str  # OCC symbol; needed to mark and to close the position
+    strike: float
+    expiry: str  # ISO date
+    contracts: int
+    premium_paid: float
+    opened_at: str
+    status: Literal["OPEN", "CLOSED", "EXPIRED"] = "OPEN"
+    close_price: float | None = None
+    closed_at: str | None = None
+
+
+@dataclass
 class PortfolioState:
     core_units: float = 1.0  # target 1.0 == core_unit_shares (default 100)
     excess_units: float = 0.0
     open_put_spreads: list[PutSpreadPosition] = field(default_factory=list)
     open_calls: list[CallPosition] = field(default_factory=list)
+    open_long_calls: list[LongCallPosition] = field(default_factory=list)
     reference_price: float | None = None
     acquisition_ladder: list[float] = field(default_factory=list)
     filled_zones: list[float] = field(default_factory=list)  # set() isn't JSON-native
@@ -76,11 +100,15 @@ class PortfolioState:
     def from_dict(cls, d: dict) -> "PortfolioState":
         put_spreads = [PutSpreadPosition(**p) for p in d.get("open_put_spreads", [])]
         calls = [CallPosition(**c) for c in d.get("open_calls", [])]
+        # Absent in states written before long calls existed; default to empty
+        # so an older state file loads rather than raising.
+        longs = [LongCallPosition(**c) for c in d.get("open_long_calls", [])]
         return cls(
             core_units=d.get("core_units", 1.0),
             excess_units=d.get("excess_units", 0.0),
             open_put_spreads=put_spreads,
             open_calls=calls,
+            open_long_calls=longs,
             reference_price=d.get("reference_price"),
             acquisition_ladder=d.get("acquisition_ladder", []),
             filled_zones=d.get("filled_zones", []),

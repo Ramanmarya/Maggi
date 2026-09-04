@@ -264,6 +264,39 @@ class StrategyConfig:
     )
     # False is V5 §2/§19: the core unit is never capped, preserving upside.
     # True lets calls be written against total inventory including the core.
+    # --- Long calls: BOUGHT convexity, 2-3 weeks out ------------------
+    # Everything else here sells premium and earns the variance risk
+    # premium; this pays it. Negative expected value in isolation, so it
+    # is off by default and hard-capped by an annual budget when on.
+    long_call_enabled: bool = field(
+        default_factory=lambda: _env_or("LONG_CALL_ENABLED",
+            bool(_rule("long_call", "enabled", False)), lambda v: str(v).lower() in ("1","true","yes"))
+    )
+    long_call_dte_range: tuple[int, int] = field(
+        default_factory=lambda: tuple(_rule("long_call", "dte_range", [14, 21]))
+    )
+    long_call_delta_target: float = field(
+        default_factory=lambda: float(_rule("long_call", "delta_target", 0.35))
+    )
+    long_call_contracts: int = field(
+        default_factory=lambda: int(_rule("long_call", "contracts", 1))
+    )
+    long_call_max_open: int = field(
+        default_factory=lambda: int(_rule("long_call", "max_open", 2))
+    )
+    # The single most important gate. A debit position loses its whole
+    # premium on every expiry that finishes out of the money, so without a
+    # ceiling on annual spend this bleeds on a schedule.
+    long_call_annual_budget_pct: float = field(
+        default_factory=lambda: _env_or("LONG_CALL_BUDGET_PCT",
+            _rule("long_call", "annual_budget_pct", 0.02), float)
+    )
+    long_call_profit_multiple: float = field(
+        default_factory=lambda: float(_rule("long_call", "profit_multiple", 2.0))
+    )
+    long_call_close_dte: int = field(
+        default_factory=lambda: int(_rule("long_call", "close_dte", 3))
+    )
     call_cover_core: bool = field(
         default_factory=lambda: bool(_rule("call_engine", "cover_core", False))
     )

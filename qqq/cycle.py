@@ -20,6 +20,7 @@ from datetime import date
 from . import cash_sweep
 from .broker_adapter import BrokerAdapter, SingleLegOrder
 from .call_engine import HybridCallEngine
+from .long_call_engine import LongCallEngine
 from .config import StrategyConfig
 from .delta import DeltaAggregator
 from .exposure_curve import decline_from_reference, should_add_exposure, target_units_for_decline
@@ -42,6 +43,7 @@ class StrategyCycle:
         self._delta = DeltaAggregator(broker, config)
         self._puts = PutSpreadEngine(broker, config, self._risk)
         self._calls = HybridCallEngine(broker, config, self._risk)
+        self._long_calls = LongCallEngine(broker, config)
 
     def _load(self) -> PortfolioState:
         return load_state(self._config.state_file_path)
@@ -156,6 +158,15 @@ class StrategyCycle:
         if call_order is not None:
             state = self._calls.submit(state, call_order)
         state = self._calls.manage_existing(state, today)
+
+        # Long-call sleeve. Bought convexity, deliberately separate from every
+        # selling engine above: it PAYS the variance risk premium the rest of
+        # the strategy earns, so it stays off unless explicitly enabled and is
+        # bounded by its own annual budget rather than by the put caps.
+        state = self._long_calls.manage_existing(state, today)
+        lc_order = self._long_calls.propose_call(state, equity, today)
+        if lc_order is not None:
+            state = self._long_calls.submit(state, lc_order, today)
 
         # 7. Portfolio crash-stress test (defensive re-check before persisting)
         stress = self._risk.check_crash_stress(
