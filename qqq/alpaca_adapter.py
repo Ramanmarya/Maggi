@@ -380,17 +380,104 @@ class AlpacaAdapter:
             return OrderResult(success=False, order_id=None, filled_avg_price=None, status="error", error=str(e))
 
     def get_dividend_calendar(self) -> list[DividendEvent]:
-        # alpaca-py's corporate actions endpoint covers this; left as a TODO
-        # since it needs the corporate-actions API surface confirmed against
-        # your account's data plan. Polygon's dividends endpoint (already
-        # used in backtest_adapter.py) is a reliable fallback if Alpaca's
-        # corporate-actions data isn't available on your plan.
-        logger.warning(
-            "get_dividend_calendar: not yet wired to a live source — "
-            "returning empty list. Ex-div safety checks will pass trivially "
-            "until this is implemented. Do not sell calls live until fixed."
+        """Upcoming ex-dividend dates, from Polygon.
+
+        This is the one risk QQQ carries that MNQ never did (§2). A short call
+        held across an ex-dividend date can be exercised early by the holder to
+        capture the dividend, which is why §8 refuses a call whose extrinsic
+        value is thin relative to the payout. Returning an empty list — as this
+        did until 2026-09-03 — makes that guard pass trivially and silently.
+
+        Fails to an empty list on any error, which is the unsafe direction, so
+        the failure is logged loudly rather than swallowed. The caller cannot
+        distinguish "no dividends ahead" from "lookup failed", so treat a
+        warning here as a reason not to write calls.
+        """
+        if not self._config.polygon_api_key:
+            logger.warning(
+                "get_dividend_calendar: no POLYGON_API_KEY — ex-dividend "
+                "safety cannot be evaluated. Short calls are unguarded."
+            )
+            return []
+
+        import requests
+
+        today = date.today()
+        try:
+            resp = requests.get(
+                "https://api.polygon.io/v3/reference/dividends",
+                params={
+                    "ticker": self._config.symbol,
+                    "ex_dividend_date.gte": today.isoformat(),
+                    "order": "asc",
+                    "limit": 12,
+                    "apiKey": self._config.polygon_api_key,
+                },
+                timeout=20,
+            )
+            resp.raise_for_status()
+            results = resp.json().get("results") or []
+        except Exception:
+            logger.exception(
+                "get_dividend_calendar failed — ex-dividend safety cannot be "
+                "evaluated. Short calls are unguarded until this recovers."
+            )
+            return []
+
+        out: list[DividendEvent] = []
+        for d in results:
+            try:
+                ex = datetime.strptime(d["ex_dividend_date"], "%Y-%m-%d").date()
+                pay = datetime.strptime(d.get("pay_date") or d["ex_dividend_date"], "%Y-%m-%d").date()
+                out.append(DividendEvent(ex_date=ex, pay_date=pay,
+                                         amount_per_share=float(d["cash_amount"])))
+            except (KeyError, ValueError):
+                continue
+
+        if not out:
+            # Polygon publishes QQQ's quarterly declaration only a few weeks
+            # ahead, so an empty forward window is normal and NOT the same as
+            # "no dividend is coming". Estimate the next one from history so
+            # the guard still has something to work with.
+            out = self._estimated_next_dividend(today)
+        return out
+
+    def _estimated_next_dividend(self, today: date) -> list[DividendEvent]:
+        """Project the next ex-div from the historical cadence.
+
+        QQQ pays quarterly, but the next date is often undeclared inside the
+        21-35 day window this strategy writes into. Falling back to an empty
+        list would let a call be written straight across an undeclared ex-div.
+        A projected date is approximate; being approximately protected beats
+        being precisely unguarded.
+        """
+        import requests
+
+        try:
+            resp = requests.get(
+                "https://api.polygon.io/v3/reference/dividends",
+                params={"ticker": self._config.symbol, "order": "desc",
+                        "limit": 4, "apiKey": self._config.polygon_api_key},
+                timeout=20,
+            )
+            past = resp.json().get("results") or []
+            if not past:
+                return []
+            last = datetime.strptime(past[0]["ex_dividend_date"], "%Y-%m-%d").date()
+            amount = float(past[0]["cash_amount"])
+        except Exception:
+            logger.exception("could not project the next ex-dividend date")
+            return []
+
+        projected = last
+        while projected < today:
+            projected += timedelta(days=91)  # quarterly cadence
+        logger.info(
+            "Next ex-dividend not yet declared; projecting %s (~$%.4f) from the "
+            "quarterly cadence for ex-div safety.", projected, amount,
         )
-        return []
+        return [DividendEvent(ex_date=projected, pay_date=projected + timedelta(days=5),
+                              amount_per_share=amount)]
 
     def unit_multiplier(self) -> float:
         return float(self._config.core_unit_shares)

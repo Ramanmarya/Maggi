@@ -133,3 +133,69 @@ def test_accumulation_is_scaled_by_the_live_regime_end_to_end():
         )
         StrategyCycle(broker, cfg)._accumulate_shares(state, snap, 700.0, 5.0, 1.0)
         assert broker.orders[0].qty == expected, f"{regime} bought {broker.orders[0].qty}"
+
+
+# ---- ex-dividend safety (§8) --------------------------------------------
+def test_ex_div_guard_refuses_a_thin_call_across_the_dividend():
+    """§8's QQQ-specific risk: a short call held across an ex-dividend date can
+    be exercised early to capture the payout. The guard refuses when extrinsic
+    value is below 1.25x the dividend. This test exists because the live
+    calendar returned an empty list until 2026-09-03, which made the guard
+    pass trivially and silently."""
+    from datetime import date, timedelta
+
+    from qqq.broker_adapter import DividendEvent, OptionContract
+    from qqq.call_engine import HybridCallEngine
+    from qqq.risk import RiskManager
+
+    ex = date.today() + timedelta(days=10)
+
+    class _B:
+        def get_underlying_price(self): return 700.0
+        def get_dividend_calendar(self):
+            return [DividendEvent(ex_date=ex, pay_date=ex, amount_per_share=0.81)]
+        def today(self): return date.today()
+
+    cfg = _cfg()
+    engine = HybridCallEngine(_B(), cfg, RiskManager(cfg))
+
+    # Deep ITM call expiring after the ex-div: almost no extrinsic left, so
+    # early exercise to capture the dividend is rational for the holder.
+    thin = OptionContract(
+        symbol="QQQ261002C00650000", underlying="QQQ",
+        expiry=ex + timedelta(days=11), strike=650.0, option_type="call",
+        bid=50.2, ask=50.4, delta=0.95, implied_vol=0.18,
+    )
+    assert engine._fails_exdiv_safety(thin, _B().get_dividend_calendar()) is True
+
+    # Well out of the money: plenty of extrinsic, early exercise is irrational.
+    fat = OptionContract(
+        symbol="QQQ261002C00730000", underlying="QQQ",
+        expiry=ex + timedelta(days=11), strike=730.0, option_type="call",
+        bid=6.0, ask=6.2, delta=0.25, implied_vol=0.18,
+    )
+    assert engine._fails_exdiv_safety(fat, _B().get_dividend_calendar()) is False
+
+
+def test_ex_div_guard_ignores_calls_expiring_before_the_dividend():
+    from datetime import date, timedelta
+
+    from qqq.broker_adapter import DividendEvent, OptionContract
+    from qqq.call_engine import HybridCallEngine
+    from qqq.risk import RiskManager
+
+    ex = date.today() + timedelta(days=20)
+
+    class _B:
+        def get_underlying_price(self): return 700.0
+        def today(self): return date.today()
+
+    cfg = _cfg()
+    engine = HybridCallEngine(_B(), cfg, RiskManager(cfg))
+    early = OptionContract(
+        symbol="QQQ260918C00650000", underlying="QQQ",
+        expiry=ex - timedelta(days=5), strike=650.0, option_type="call",
+        bid=50.2, ask=50.4, delta=0.95, implied_vol=0.18,
+    )
+    divs = [DividendEvent(ex_date=ex, pay_date=ex, amount_per_share=0.81)]
+    assert engine._fails_exdiv_safety(early, divs) is False

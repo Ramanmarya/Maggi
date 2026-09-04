@@ -356,9 +356,16 @@ to express position size across a large price move; percent of equity is not.
   to 50%.
 - **Roll logic** for calls threatened by ex-dividend assignment is flagged but
   not executed (logs a warning rather than rolling).
-- **`get_dividend_calendar` on the live Alpaca adapter returns `[]`**, so the
-  ex-div safety check passes trivially. Do not sell calls live until this is
-  wired (Polygon's dividends endpoint already works in the backtest adapter).
+- ~~**`get_dividend_calendar` returns `[]`**~~ **Wired** (2026-09-03) to
+  Polygon's dividends endpoint. It became urgent rather than theoretical the
+  moment the cash-secured structure shipped: ATM puts assign about half the
+  time, so shares arrive, excess inventory exists, and Engine C fires for the
+  first time. Polygon publishes QQQ's quarterly declaration only weeks ahead,
+  so an empty forward window is normal and is *not* the same as "no dividend
+  is coming" — the adapter therefore projects the next ex-div from the
+  quarterly cadence when none is declared. Being approximately protected beats
+  being precisely unguarded. Any lookup failure still returns an empty list,
+  which is the unsafe direction, so it is logged loudly.
 - **Zone exhaustion in a decline is a FEATURE, not a defect** (tested
   2026-09-03). The engine writes nothing through a sustained fall because §5
   spends each zone once per reset and only recenters on a new high. That
