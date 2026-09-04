@@ -75,9 +75,15 @@ def setup(tmp_path: Path):
     def build(path: list[float], equity: float = 100_000.0):
         cache = BarCache(tmp_path / f"bt{len(path)}_{int(path[0])}.sqlite")
         data = FakeData(path, cache)
+        # Accumulation pinned OFF: these tests exercise the core bootstrap and
+        # the execution path, not the accumulation feature. Reading the live
+        # rules.json makes them fail whenever the operator enables it, which
+        # is a false alarm rather than a regression. A dedicated test below
+        # covers accumulation firing.
         config = replace(
             StrategyConfig(alpaca_api_key="x", alpaca_secret_key="y"),
             state_file_path=tmp_path / "state.json",
+            ladder_accumulate_shares_per_zone=0,
         )
         broker = BacktestBroker(config, data, equity, CostModel())
         broker.prime(data.days[0], data.days[-1])
@@ -301,3 +307,33 @@ def test_spreads_are_held_across_multiple_sessions(setup):
     closes = {f.day for f in broker.ledger.fills if f.reason == "close_spread"}
     assert opens, "no spreads opened"
     assert opens - closes, "every spread closed on the day it opened"
+
+
+def test_accumulation_adds_shares_beyond_the_core_when_enabled(tmp_path):
+    """The counterpart to the pinned fixture above: with accumulation on, a
+    falling market must carry the position past the core, which is the whole
+    point of §15's exposure curve."""
+    from dataclasses import replace as _replace
+
+    from qqq.cycle import StrategyCycle
+
+    cache = BarCache(tmp_path / "acc.sqlite")
+    path = [700.0] * 60 + [700.0 - i * 3.0 for i in range(30)]
+    data = FakeData(path, cache)
+    config = _replace(
+        StrategyConfig(alpaca_api_key="x", alpaca_secret_key="y"),
+        state_file_path=tmp_path / "acc_state.json",
+        ladder_accumulate_shares_per_zone=50,
+        max_crash_stress_pct=0.50,     # not the constraint under test
+        equity_basis_override=None,
+    )
+    broker = BacktestBroker(config, data, 250_000.0, CostModel())
+    broker.prime(data.days[0], data.days[-1])
+    cycle = StrategyCycle(broker, config)
+    for day in data.days[60:]:
+        broker.set_as_of(day)
+        cycle.run_daily_cycle()
+
+    assert broker.ledger.shares_held("QQQ") > config.core_unit_shares, (
+        "a sustained decline should have accumulated past the core"
+    )
