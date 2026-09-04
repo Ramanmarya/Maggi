@@ -28,13 +28,20 @@ class AcquisitionLadder:
         self._broker = broker
         self._config = config
 
-    def build_zones(self, reference_price: float, atr: float) -> list[float]:
-        return [
-            round(reference_price - mult * atr, 2)
-            for mult in self._config.ladder_atr_multipliers
-        ]
+    def build_zones(
+        self, reference_price: float, atr: float, regime: str = "BULL"
+    ) -> list[float]:
+        """§4: the regime changes ATR spacing. Wider spacing in a downtrend
+        means fewer, deeper entries rather than a rapid walk down the ladder."""
+        from .regime_policy import RegimePolicy
 
-    def maybe_recenter(self, state: PortfolioState, price: float, atr: float) -> PortfolioState:
+        policy = RegimePolicy.for_regime(self._config, regime)
+        mults = policy.scaled_multipliers(tuple(self._config.ladder_atr_multipliers))
+        return [round(reference_price - m * atr, 2) for m in mults]
+
+    def maybe_recenter(
+        self, state: PortfolioState, price: float, atr: float, regime: str = "BULL"
+    ) -> PortfolioState:
         """Recenter the reference price on a qualifying new high, per §6.
 
         Trigger: new closing high that exceeds prior reference by
@@ -45,7 +52,7 @@ class AcquisitionLadder:
         if state.reference_price is None:
             state.reference_price = price
             state.last_recenter_price = price
-            state.acquisition_ladder = self.build_zones(price, atr)
+            state.acquisition_ladder = self.build_zones(price, atr, regime)
             state.filled_zones = []
             state.zone_filled_on = {}
             return state
@@ -53,7 +60,7 @@ class AcquisitionLadder:
         if price >= state.reference_price + threshold:
             state.reference_price = price
             state.last_recenter_price = price
-            state.acquisition_ladder = self.build_zones(price, atr)
+            state.acquisition_ladder = self.build_zones(price, atr, regime)
             state.filled_zones = []  # anti-clustering resets on recenter
             state.zone_filled_on = {}
 

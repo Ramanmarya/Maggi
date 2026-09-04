@@ -29,11 +29,18 @@ class PutSpreadEngine:
         self._config = config
         self._risk = risk
 
-    def _select_short_leg(self, chain: list[OptionContract]) -> OptionContract | None:
+    def _select_short_leg(
+        self, chain: list[OptionContract], regime: str = "BULL"
+    ) -> OptionContract | None:
+        """§4: the regime changes put selection. A lower delta target in a
+        downtrend puts the short strike further out of the money."""
+        from .regime_policy import RegimePolicy
+
         puts = [c for c in chain if c.option_type == "put" and c.delta is not None]
         if not puts:
             return None
-        target = -self._config.put_spread_short_delta_target  # puts have negative delta
+        policy = RegimePolicy.for_regime(self._config, regime)
+        target = -self._config.put_spread_short_delta_target * policy.put_delta
         return min(puts, key=lambda c: abs(c.delta - target))
 
     def _spread_economics(
@@ -144,10 +151,10 @@ class PutSpreadEngine:
         return min(fitting, key=lambda c: c.strike)  # lowest strike = widest spread
 
     def propose_spread(
-        self, state: PortfolioState, equity: float
+        self, state: PortfolioState, equity: float, regime: str = "BULL"
     ) -> VerticalSpreadOrder | None:
         chain = self._broker.get_option_chain(self._config.put_spread_dte_range)
-        short_leg = self._select_short_leg(chain)
+        short_leg = self._select_short_leg(chain, regime)
         if short_leg is None:
             return None
         price = self._broker.get_underlying_price()

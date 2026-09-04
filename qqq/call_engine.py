@@ -40,8 +40,12 @@ class HybridCallEngine:
         self._risk = risk
 
     def _select_short_leg(
-        self, chain: list[OptionContract], rebound_confirmed: bool
+        self, chain: list[OptionContract], rebound_confirmed: bool, regime: str = "BULL"
     ) -> OptionContract | None:
+        """§24: less willingness to sell calls into a sharp decline, more after
+        a rebound. A higher delta target means closer to the money."""
+        from .regime_policy import RegimePolicy
+
         calls = [c for c in chain if c.option_type == "call" and c.delta is not None]
         if not calls:
             return None
@@ -50,6 +54,7 @@ class HybridCallEngine:
             if rebound_confirmed
             else self._config.call_short_delta_target
         )
+        target *= RegimePolicy.for_regime(self._config, regime).call_delta
         return min(calls, key=lambda c: abs(c.delta - target))
 
     def _is_rebound_confirmed(self, state: PortfolioState, price: float) -> bool:
@@ -100,7 +105,7 @@ class HybridCallEngine:
         return False
 
     def propose_call(
-        self, state: PortfolioState, equity: float
+        self, state: PortfolioState, equity: float, regime: str = "BULL"
     ) -> SingleLegOrder | None:
         excess_units = state.excess_units
         if excess_units <= 0:
@@ -110,7 +115,7 @@ class HybridCallEngine:
         rebound = self._is_rebound_confirmed(state, price)
 
         chain = self._broker.get_option_chain(self._config.call_dte_range)
-        short_leg = self._select_short_leg(chain, rebound)
+        short_leg = self._select_short_leg(chain, rebound, regime)
         if short_leg is None:
             return None
 

@@ -32,7 +32,29 @@
   "regime": {
     "slope_lookback_days": 20,
     "slope_flat_band": 0.0,
-    "_doc": "\u00a74. BULL = price > 200DMA and slope > band; DEFENSIVE = price < 200DMA and slope < -band; else NEUTRAL. flat_band 0.0 means no dead zone, matching the doc."
+    "_doc": "\u00a74. BULL = price > 200DMA and slope > band; DEFENSIVE = price < 200DMA and slope < -band; else NEUTRAL. flat_band 0.0 means no dead zone, matching the doc.",
+    "filter_enabled": true,
+    "adjustments": {
+      "BULL": {
+        "accumulate": 1.0,
+        "spacing": 1.0,
+        "put_delta": 1.0,
+        "call_delta": 1.0
+      },
+      "NEUTRAL": {
+        "accumulate": 0.75,
+        "spacing": 1.25,
+        "put_delta": 0.85,
+        "call_delta": 1.0
+      },
+      "DEFENSIVE": {
+        "accumulate": 0.4,
+        "spacing": 1.75,
+        "put_delta": 0.6,
+        "call_delta": 1.25
+      }
+    },
+    "_filter_note": "ENABLED 2026-09-03, on judgement rather than measurement \u2014 and the distinction matters. V5 \u00a74/\u00a720/\u00a724 specify that the regime should change accumulation aggressiveness, ATR spacing, put selection and call aggressiveness; until now it was computed, logged and displayed while NOTHING branched on it. Now wired. BULL multipliers are all 1.0 by design, so the filter can only ever WITHDRAW risk relative to the tested behaviour, never add it. MEASURED EFFECT IS ~NIL: over 626 sessions, off -> $12,648/yr, Sharpe 1.03; on -> $12,510/yr, Sharpe 1.01 (accumulation off). With accumulation on, drawdown improves slightly, 9.84% -> 9.73%. The reason is that the window was 66% BULL, 26.5% NEUTRAL and only 7.5% DEFENSIVE \u2014 the filter is a no-op in two thirds of the sample and barely acts in the rest. It is enabled because it is insurance against the regime the data does not contain, not because the backtest endorses it. Published support is indirect but strong: a 2005-2025 SPX study of 45-DTE 16-delta short premium reports Sharpe 0.52 unfiltered versus 0.81 filtered. Expect no visible benefit until the first real downtrend."
   },
   "exposure_curve": {
     "_doc": "ALGORITHM.md 6. Target unit-equivalent exposure keyed to decline from reference. OPERATOR CHANGE 2026-09-03: base lifted from 1.0 to 1.25 at the highs (whole curve +0.25) so the engine has genuine appetite above the core rather than sitting exactly at target and proposing nothing. The doc's original was 1.0/1.5/2.0/2.5/3.0/3.125/3.25. Still an untested hypothesis either way - the source doc labels this table as one.",

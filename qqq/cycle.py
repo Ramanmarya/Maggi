@@ -95,7 +95,7 @@ class StrategyCycle:
         state = self._ensure_core_position(state, snapshot, price)
 
         # 4. Ladder check / recenter
-        state = self._ladder.maybe_recenter(state, price, atr)
+        state = self._ladder.maybe_recenter(state, price, atr, state.current_regime)
         zone = self._ladder.unused_zone_at_or_below(state, price, today)
 
         # 5. Put engine pass
@@ -118,7 +118,7 @@ class StrategyCycle:
             # Buying outright keeps the spreads defined-risk and still gets
             # the accumulation the exposure curve is built around.
             state = self._accumulate_shares(state, snapshot, price, target_exposure, total_delta)
-            order = self._puts.propose_spread(state, equity)
+            order = self._puts.propose_spread(state, equity, state.current_regime)
             if order is not None:
                 state = self._puts.submit(state, order)
                 state = self._ladder.mark_zone_filled(state, zone, today)
@@ -138,7 +138,7 @@ class StrategyCycle:
         state.excess_units = max(
             0.0, held_shares / self._config.core_unit_shares - state.core_units
         )
-        call_order = self._calls.propose_call(state, equity)
+        call_order = self._calls.propose_call(state, equity, state.current_regime)
         if call_order is not None:
             state = self._calls.submit(state, call_order)
         state = self._calls.manage_existing(state, today)
@@ -174,7 +174,14 @@ class StrategyCycle:
         shares carry uncapped downside, so this is the one gate that sees the
         true risk of accumulating.
         """
-        per_fire = self._config.ladder_accumulate_shares_per_zone
+        from .regime_policy import RegimePolicy
+
+        # §4/§14: the regime scales accumulation aggressiveness. This is the
+        # single most consequential place the filter applies — buying hardest
+        # into a confirmed downtrend is exactly the failure mode §14 warns
+        # about, and the one this strategy has no backtest evidence for.
+        policy = RegimePolicy.for_regime(self._config, state.current_regime)
+        per_fire = int(self._config.ladder_accumulate_shares_per_zone * policy.accumulate)
         if per_fire <= 0:
             return state
 

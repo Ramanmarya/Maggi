@@ -154,6 +154,12 @@ class StrategyConfig:
     regime_slope_lookback_days: int = field(
         default_factory=lambda: _rule("regime", "slope_lookback_days", 20)
     )
+    regime_filter_enabled: bool = field(
+        default_factory=lambda: bool(_rule("regime", "filter_enabled", False))
+    )
+    regime_adjustments: dict = field(
+        default_factory=lambda: _rule("regime", "adjustments", {}) or {}
+    )
     regime_slope_flat_band: float = field(
         default_factory=lambda: _rule("regime", "slope_flat_band", 0.0)
     )
