@@ -14,6 +14,7 @@ V5 doc §8-13:
 
 from __future__ import annotations
 
+import logging
 import uuid
 from datetime import date, datetime, timezone
 
@@ -21,6 +22,8 @@ from .broker_adapter import BrokerAdapter, OptionContract, VerticalSpreadOrder
 from .config import StrategyConfig
 from .risk import RiskManager
 from .state import PortfolioState, PutSpreadPosition
+
+logger = logging.getLogger(__name__)
 
 
 class PutSpreadEngine:
@@ -42,12 +45,28 @@ class PutSpreadEngine:
         max_spread = self._config.max_spread_pct_of_mid
         if min_oi <= 0 and max_spread <= 0:
             return legs
+
+        # Distinguish "this contract is illiquid" from "this data source
+        # cannot report open interest at all". Both backtest sources set
+        # open_interest=None on every contract, so treating absent data as a
+        # failure silently refused EVERY trade -- the XLE arm ran 125
+        # sessions and opened nothing. A chain with no OI anywhere is a
+        # source limitation, announced loudly, not a liquidity verdict.
+        oi_available = any(c.open_interest is not None for c in legs)
+        if min_oi > 0 and not oi_available and legs:
+            logger.warning(
+                "OPEN-INTEREST FLOOR NOT ENFORCED: no contract in this chain reports open "
+                "interest, so the min_open_interest=%d floor cannot be applied. This run does "
+                "NOT validate that filter; live trading must re-check it against a source that "
+                "supplies OI.", min_oi,
+            )
+
         out = []
         for c in legs:
-            if min_oi > 0:
+            if min_oi > 0 and oi_available:
                 oi = c.open_interest
-                # Unknown OI is not proof of liquidity. On an arm that asked
-                # for a floor, absent data fails the floor.
+                # Within a chain that DOES report OI, a contract missing it
+                # fails: absent data is not proof of liquidity.
                 if oi is None or oi < min_oi:
                     continue
             if max_spread > 0:

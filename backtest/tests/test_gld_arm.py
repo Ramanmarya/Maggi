@@ -27,10 +27,10 @@ RISE = [400.0 + i * 0.8 for i in range(90)]
 PATHS = {"flat": FLAT, "dip": DIP, "rise": RISE}
 
 
-def _run(tmp_path, path, tag, equity=250_000.0, allocation=1.0, **cfg_kw):
+def _run(tmp_path, path, tag, equity=250_000.0, allocation=1.0, arm="gld", **cfg_kw):
     cache = BarCache(tmp_path / f"gld{tag}.sqlite")
     data = FakeData(path, cache)
-    base = StrategyConfig.for_arm("gld")
+    base = StrategyConfig.for_arm(arm)
     config = replace(
         base, alpaca_api_key="x", alpaca_secret_key="y",
         state_file_path=tmp_path / f"gld_state_{tag}.json",
@@ -154,3 +154,20 @@ def test_a_higher_target_deploys_at_least_as_much(tmp_path):
     nlo = len([f for f in low.ledger.fills if f.kind == "option"])
     nhi = len([f for f in high.ledger.fills if f.kind == "option"])
     assert nhi >= nlo, f"70% target ({nhi}) traded less than 20% ({nlo})"
+
+
+# ---------------------------------------------------- every arm must trade
+
+@pytest.mark.parametrize("arm", ["qqq", "gld", "xle"])
+@pytest.mark.parametrize("name", list(PATHS))
+def test_every_arm_opens_positions(tmp_path, arm, name):
+    """The failure that shipped: the XLE arm ran 125 real sessions and opened
+    NOTHING -- a clean run, +2.23%, max drawdown 0.00%, Sharpe 25.34, and not
+    one trade. Its own liquidity floor had refused every contract because the
+    backtest sources report open_interest=None. The GLD suite had this test;
+    XLE did not, so nothing caught it. Parametrised by arm so the next one
+    inherits it automatically."""
+    broker, _, raised = _run(tmp_path, PATHS[name], f"all{arm}{name}", arm=arm)
+    assert not raised, f"{arm} raised: {raised[0][1]!r}"
+    fills = [f for f in broker.ledger.fills if f.kind == "option"]
+    assert fills, f"{arm} arm opened NOTHING on the {name} path"

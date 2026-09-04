@@ -40,11 +40,30 @@ def test_thin_open_interest_is_refused():
     assert [c.strike for c in kept] == [62.0]
 
 
-def test_unknown_open_interest_fails_the_floor():
-    """Absent data is not proof of liquidity. An arm that asked for a floor
-    must not be handed contracts whose depth is simply unknown."""
+def test_unknown_oi_fails_when_the_chain_reports_it_elsewhere():
+    """Within a chain that DOES report OI, a contract missing it fails:
+    absent data is not proof of liquidity."""
     e = _engine(min_open_interest=100, max_spread_pct_of_mid=0.0)
-    assert e._liquid_only([_leg(oi=None)]) == []
+    kept = e._liquid_only([_leg(strike=60, oi=None), _leg(strike=62, oi=500)])
+    assert [c.strike for c in kept] == [62.0]
+
+
+def test_a_source_that_reports_no_oi_at_all_does_not_refuse_everything():
+    """Both backtest data sources hardcode open_interest=None. Treating that
+    as a liquidity failure refused EVERY trade -- the XLE arm ran 125
+    sessions and opened nothing, silently, with a clean equity curve."""
+    e = _engine(min_open_interest=100, max_spread_pct_of_mid=0.0)
+    legs = [_leg(strike=60, oi=None), _leg(strike=62, oi=None)]
+    assert len(e._liquid_only(legs)) == 2
+
+
+def test_that_case_is_announced_rather_than_assumed(caplog):
+    """Skipping a safety filter silently is worse than not having it."""
+    import logging
+    e = _engine(min_open_interest=100, max_spread_pct_of_mid=0.0)
+    with caplog.at_level(logging.WARNING):
+        e._liquid_only([_leg(oi=None)])
+    assert any("OPEN-INTEREST FLOOR NOT ENFORCED" in r.message for r in caplog.records)
 
 
 def test_a_punitive_spread_is_refused():
