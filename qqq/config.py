@@ -263,7 +263,9 @@ class StrategyConfig:
     # The ladder alone pinned trade count at 79-84 regardless of expiry, so it,
     # not DTE, was always the limiter on premium collected.
     put_entry_mode: str = field(
-        default_factory=lambda: str(_rule("put_engine", "entry_mode", "ladder"))
+        default_factory=lambda: _env_or(
+            "PUT_ENTRY_MODE", _rule("put_engine", "entry_mode", "ladder"), str
+        )
     )
     put_target_open_positions: int = field(
         default_factory=lambda: int(_rule("put_engine", "target_open_positions", 3))

@@ -67,3 +67,54 @@ wearing an income costume; the credit is not a yield.
 
 For scale: $92,000 on $250k is 37%/yr. The CBOE PutWrite index — 32 years of
 exactly this trade — returned 10.1%/yr *total*, underlying included.
+
+---
+
+# Continuous rolling vs the ATR ladder (2026-09-04)
+
+Under-deployment looked like the binding constraint across three separate
+findings: the GLD arm held 4 puts where collateral allowed 14, the QQQ arm
+wrote 11 puts in six months of 2022, and raising the crash-stress cap was
+inert at $250k because the ladder — not the caps — was what bound the book.
+
+`entry_mode: "continuous"` targets a deployment fraction instead of waiting
+for price to touch a rung. It was built, tested, and measured:
+
+```
+arm   mode          crash     bull   combined   avg vol   ret/vol    overlay   puts
+qqq   ladder       -4.68%    8.90%      3.80%     6.39%      0.60     +2,518     36
+qqq   cont60      -13.74%   14.13%     -1.55%    13.61%     -0.11     -6,942    119
+qqq   cont80      -16.68%   14.87%     -4.29%    16.35%     -0.26    -12,391    140
+gld   ladder        2.43%    2.70%      5.20%     1.02%      5.07     +1,687     63
+gld   cont60        2.24%    3.26%      5.57%     2.39%      2.33     +3,249    147
+gld   cont80        2.19%    3.29%      5.55%     2.48%      2.24     +3,390    148
+```
+
+It deployed exactly as designed. QQQ premium went from $18,878 to $78,618 —
+4x — and the overlay from **+$2,518 to −$12,391**. Every extra dollar of
+credit was given back, plus more.
+
+`ret/vol` is the honest column: QQQ ladder 0.60, every continuous variant
+NEGATIVE; GLD 5.07 → 2.33. **More trading bought worse risk-adjusted return
+in both arms.**
+
+## Verdict: ladder KEPT on both arms
+
+The premise was wrong. The ladder was not costing return — it was declining
+trades that lose money in a falling market, which is precisely what a
+dip-buying ladder is for. A conservative design was misread as a defect.
+
+GLD's mild improvement (5.20% → 5.57%) is not evidence for continuous mode:
+gold was **flat** (+0.05%) in the crash window, so there was nothing to
+amplify. Continuous deployment is leverage, and it multiplies whatever the
+underlying did.
+
+Continuous mode remains built, tested and OFF, one config line from use if a
+future test justifies it.
+
+## Open
+
+GLD's deployment dial saturates — 60% and 80% produce 75 vs 76 puts (2022)
+and 72 vs 72 (2023), while QQQ scales normally (48 → 63). A risk gate is
+biting at gold's smaller contract size. Unidentified; irrelevant while the
+ladder is in use, but it must be found before anyone trusts that dial.
