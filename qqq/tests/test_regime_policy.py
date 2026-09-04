@@ -103,3 +103,33 @@ def test_a_partial_override_keeps_the_remaining_defaults():
     p = RegimePolicy.for_regime(cfg, "DEFENSIVE")
     assert p.accumulate == 0.1
     assert p.spacing == DEFAULTS["DEFENSIVE"]["spacing"]
+
+
+def test_accumulation_is_scaled_by_the_live_regime_end_to_end():
+    """The counterpart: with the filter on, a NEUTRAL regime must actually
+    reduce the size bought, not just the multiplier in isolation."""
+    from qqq.broker_adapter import PortfolioSnapshot, PositionSnapshot
+    from qqq.cycle import StrategyCycle
+
+    class _B:
+        def __init__(self): self.orders = []
+        def option_delta(self, s): return None
+        def get_underlying_price(self): return 700.0
+        def today(self): return __import__("datetime").date(2026, 1, 5)
+        def submit_single_leg(self, order):
+            from qqq.broker_adapter import OrderResult
+            self.orders.append(order)
+            return OrderResult(True, "ok", 700.0, "filled")
+
+    for regime, expected in (("BULL", 50), ("NEUTRAL", 37), ("DEFENSIVE", 20)):
+        broker = _B()
+        cfg = _cfg(ladder_accumulate_shares_per_zone=50, equity_basis_override=None,
+                   max_crash_stress_pct=0.50)
+        state = PortfolioState()
+        state.current_regime = regime
+        snap = PortfolioSnapshot(
+            equity=1_000_000.0, cash=1_000_000.0, buying_power=1_000_000.0,
+            positions=[PositionSnapshot("QQQ", 100, 700.0, 700.0, 70_000.0, 0.0, "equity")],
+        )
+        StrategyCycle(broker, cfg)._accumulate_shares(state, snap, 700.0, 5.0, 1.0)
+        assert broker.orders[0].qty == expected, f"{regime} bought {broker.orders[0].qty}"

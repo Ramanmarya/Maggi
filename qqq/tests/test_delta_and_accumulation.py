@@ -45,7 +45,12 @@ class _Broker:
 
 
 def _cfg(**kw):
-    return replace(StrategyConfig(alpaca_api_key="x", alpaca_secret_key="y"), **kw)
+    # Regime filter pinned OFF: these tests check delta arithmetic and the
+    # accumulation bounds, and a default PortfolioState reports NEUTRAL, whose
+    # 0.75 accumulate multiplier would silently rescale every expected size.
+    # test_regime_policy.py covers the filter itself.
+    fields = {"regime_filter_enabled": False, **kw}
+    return replace(StrategyConfig(alpaca_api_key="x", alpaca_secret_key="y"), **fields)
 
 
 def _snap(positions, cash=100_000.0, equity=100_000.0):
