@@ -3,7 +3,8 @@
   "instrument": {
     "symbol": "QQQ",
     "core_unit_shares": 100,
-    "_doc": "1 unit = 100 shares = 1 option contract's worth of underlying (ALGORITHM.md \u00a72)."
+    "_doc": "1 unit = 100 shares = 1 option contract's worth of underlying (ALGORITHM.md \u00a72).",
+    "core_units": 1.0
   },
   "cadence": {
     "intraday_check_interval_minutes": 15,
@@ -104,5 +105,12 @@
     "polygon_max_workers": 1,
     "polygon_min_interval_seconds": 0.7,
     "_doc": "\u00a711. Historical greeks are Black-Scholes approximations (IV backed out of the quoted mid) because Polygon's historical endpoints carry no greeks. The chain walk makes one quotes request per contract, so polygon_max_workers is pinned to 1 and requests are spaced by polygon_min_interval_seconds to stay under the ~100 req/min plan cap."
+  },
+  "cash_sweep": {
+    "enabled": true,
+    "symbol": "SGOV",
+    "reserve_buffer": 5000.0,
+    "min_trade": 1000.0,
+    "_doc": "NOT from ALGORITHM.md \u2014 added 2026-09-03. The strategy carries ~$28,500 idle on a $100k account because the core consumes the capital and the options program risks only a few thousand at a time. Idle cash earned nothing in every backtest, which costs more than the options overlay produces: ~$1,283/yr at 4.5% versus ~$1,620/yr from every spread written. SGOV is 0-3 month Treasuries, near-zero duration risk. The reserve is the aggregate put-risk cap plus reserve_buffer, so the options program can always open, close or take assignment without a forced sale \u2014 holding slightly too much cash costs a few dollars of yield, holding too little forces a liquidation at the worst possible moment."
   }
 }

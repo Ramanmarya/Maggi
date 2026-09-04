@@ -17,6 +17,7 @@ import logging
 import uuid
 from datetime import date
 
+from . import cash_sweep
 from .broker_adapter import BrokerAdapter, SingleLegOrder
 from .call_engine import HybridCallEngine
 from .config import StrategyConfig
@@ -69,6 +70,7 @@ class StrategyCycle:
 
     def run_daily_cycle(self) -> PortfolioState:
         state = self._load()
+        state.core_units = self._config.core_units_target
         today = self._broker.today()
 
         # 1. Pull market data
@@ -148,7 +150,14 @@ class StrategyCycle:
         if not stress.passed:
             logger.warning("Crash-stress cap breached at end of cycle: %s", stress.reason)
 
-        # 8. Persist state
+        # 8. Sweep whatever cash is genuinely idle. Runs LAST, so it only
+        # ever moves what this cycle's trading decisions did not claim.
+        try:
+            cash_sweep.execute(self._broker, self._config, self._broker.get_current_positions())
+        except Exception as e:  # never let a yield optimisation break the cycle
+            logger.warning("Cash sweep skipped: %s: %s", type(e).__name__, e)
+
+        # 9. Persist state
         self._save(state)
         return state
 

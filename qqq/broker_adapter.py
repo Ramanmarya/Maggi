@@ -104,6 +104,11 @@ class BrokerAdapter(Protocol):
 
     def get_option_chain(self, dte_range: tuple[int, int]) -> list[OptionContract]: ...
 
+    def equity_price(self, symbol: str) -> float | None:
+        """Last price for an arbitrary equity, or None. Used by the cash
+        sweep, which trades an instrument other than the arm's own."""
+        ...
+
     def option_delta(self, symbol: str) -> float | None:
         """Per-contract delta for one option, or None if unavailable.
 

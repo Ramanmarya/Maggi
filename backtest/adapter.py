@@ -101,6 +101,12 @@ class BacktestBroker:
             )
         return out
 
+    def equity_price(self, symbol: str) -> float | None:
+        if symbol == self._config.symbol:
+            return self.get_underlying_price()
+        bars = self._data.load_underlying_symbol(symbol, self._as_of)
+        return bars[-1].close if bars else None
+
     def option_delta(self, symbol: str) -> float | None:
         """Back the delta out of the day's close, same route the chain uses."""
         from qqq.black_scholes import bs_delta, implied_vol

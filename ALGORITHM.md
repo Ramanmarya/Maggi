@@ -224,6 +224,32 @@ crash-stress test and ex-dividend monitoring, but never open new positions.
 
 Implementation: `qqq/cycle.py`, driven one-shot by `qqq/orchestrator.py`.
 
+## 12. Additions beyond the source document
+
+These are not in the V5 doc. They are recorded here so the difference between
+"the strategy as specified" and "what actually runs" stays visible.
+
+**Idle-cash sweep into short Treasuries** (`qqq/cash_sweep.py`). The strategy
+holds ~$28,500 idle on a $100,000 account, because the core consumes the
+capital and the options program risks only a few thousand at a time. That cash
+earned nothing in every backtest — which quietly costs more than the whole
+options overlay produces. Swept into SGOV above a reserve of the aggregate
+put-risk cap plus a buffer, so the options program can always open, close or
+take assignment without a forced sale. At current balances it moves ~$16,000
+and collects ~$719/yr, against ~$1,620/yr from every spread the engine writes.
+
+**Why the core is NOT being increased.** A sweep of core size on the 626-session
+backtest suggested a 1.4-unit core (+$16,290/yr at Sharpe 1.04, versus
++$12,367 at 1.0). That recommendation does not survive contact with today's
+price and has been withdrawn. QQQ has risen 61% since the backtest window
+opened, so a "unit" now costs $71,722 rather than $44,564: the backtest's
+1.4-unit core was 62% of the account, while today's 1.0-unit core is already
+**72%**. Expressed as exposure — which is what actually matters — the live
+account is already between the 1.4- and 1.8-unit configurations. Buying to a
+literal 1.4 units would cost $100,411 against $100,077 of equity, and breach
+crash-stress at $30,123 versus a $30,000 cap. Unit counts are a misleading way
+to express position size across a large price move; percent of equity is not.
+
 ## 11. What's still a placeholder
 
 - ~~**Backtest P&L accounting.**~~ **Built** (2026-09-03). `backtest/` now

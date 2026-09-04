@@ -97,6 +97,34 @@ class HistoricalData:
             self.cache.commit()
         return self.cache.bars(sym, start, end)
 
+    def load_underlying_symbol(self, symbol: str, as_of: date) -> list[Bar]:
+        """Daily bars for any equity, cached. Used for the cash-sweep
+        instrument, which is not the arm's own underlying."""
+        start = as_of - timedelta(days=400)
+        if not self.cache.have_range(symbol, start, as_of):
+            from alpaca.data.enums import DataFeed
+            from alpaca.data.requests import StockBarsRequest
+            from alpaca.data.timeframe import TimeFrame
+
+            try:
+                resp = self._stock_client().get_stock_bars(
+                    StockBarsRequest(
+                        symbol_or_symbols=symbol, timeframe=TimeFrame.Day,
+                        start=datetime.combine(start, datetime.min.time()),
+                        end=datetime.combine(as_of, datetime.max.time()),
+                        feed=DataFeed.IEX,
+                    )
+                )
+                self.requests += 1
+                bars = [Bar(b.timestamp.date(), b.open, b.high, b.low, b.close, b.volume)
+                        for b in (resp.data.get(symbol, []) if hasattr(resp, "data") else [])]
+            except Exception:
+                bars = []
+            self.cache.put_bars(symbol, bars)
+            self.cache.mark_range(symbol, start, as_of)
+            self.cache.commit()
+        return self.cache.bars(symbol, None, as_of)
+
     # ---- options ---------------------------------------------------------
     def load_option_bars(self, symbols: Iterable[str], start: date, end: date) -> None:
         """Fetch and cache daily bars for many contracts, skipping cached ones."""

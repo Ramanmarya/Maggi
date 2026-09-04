@@ -92,6 +92,12 @@ class StrategyConfig:
     core_unit_shares: int = field(
         default_factory=lambda: _env_or("CORE_UNIT_SHARES", _rule("instrument", "core_unit_shares", 100), int)
     )
+    # How many units the permanent core holds. 1.0 is ALGORITHM.md §3. 0
+    # makes this a pure premium-selling program with no Nasdaq exposure —
+    # a different strategy, not a tuning of this one.
+    core_units_target: float = field(
+        default_factory=lambda: float(_rule("instrument", "core_units", 1.0))
+    )
 
     # --- Alpaca connection ---
     alpaca_api_key: str = field(
@@ -233,6 +239,20 @@ class StrategyConfig:
         default_factory=lambda: _rule("risk", "daily_loss_limit_pct", 0.06)
     )
     max_drawdown_pct: float = field(default_factory=lambda: _rule("risk", "max_drawdown_pct", 0.25))
+
+    # --- Idle-cash sweep (not from the source doc) ---
+    cash_sweep_enabled: bool = field(
+        default_factory=lambda: bool(_rule("cash_sweep", "enabled", False))
+    )
+    cash_sweep_symbol: str = field(
+        default_factory=lambda: str(_rule("cash_sweep", "symbol", "SGOV"))
+    )
+    cash_sweep_buffer: float = field(
+        default_factory=lambda: float(_rule("cash_sweep", "reserve_buffer", 5000.0))
+    )
+    cash_sweep_min_trade: float = field(
+        default_factory=lambda: float(_rule("cash_sweep", "min_trade", 1000.0))
+    )
 
     # --- Backtest-only (§11) ---
     backtest_risk_free_rate: float = field(

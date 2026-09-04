@@ -178,6 +178,17 @@ class AlpacaAdapter:
             )
         return out
 
+    def equity_price(self, symbol: str) -> float | None:
+        try:
+            from alpaca.data.enums import DataFeed
+            from alpaca.data.requests import StockLatestTradeRequest
+
+            req = StockLatestTradeRequest(symbol_or_symbols=symbol, feed=DataFeed.IEX)
+            return float(self._stock_data.get_stock_latest_trade(req)[symbol].price)
+        except Exception:
+            logger.warning("equity_price unavailable for %s", symbol)
+            return None
+
     def option_delta(self, symbol: str) -> float | None:
         """Alpaca's option snapshot carries greeks; None on any failure so the
         aggregator degrades rather than crashing the cycle."""
@@ -220,7 +231,11 @@ class AlpacaAdapter:
             # corrupt the unit-delta calculation that drives every sizing
             # decision. Matches QQQ shares and OCC option symbols rooted on QQQ.
             sym = str(p.symbol)
-            if not (sym == self._config.symbol or sym.startswith(self._config.symbol)):
+            # The arm's own instrument, plus the cash-sweep instrument — the
+            # sweep has to be able to see its own holding to rebalance it.
+            keep = sym == self._config.symbol or sym.startswith(self._config.symbol)
+            keep = keep or sym == self._config.cash_sweep_symbol
+            if not keep:
                 continue
             asset_class = "option" if getattr(p, "asset_class", None) == "us_option" else "equity"
             positions.append(

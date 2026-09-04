@@ -90,6 +90,9 @@ class StubBroker:
                 )
         return out
 
+    def equity_price(self, symbol: str) -> float | None:
+        return 100.25 if symbol != 'QQQ' else self._price
+
     def option_delta(self, symbol: str) -> float | None:
         return -0.20 if symbol[-9] == 'P' else 0.20
 
