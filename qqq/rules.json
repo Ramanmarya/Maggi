@@ -40,7 +40,7 @@
     "slope_lookback_days": 20,
     "slope_flat_band": 0.0,
     "_doc": "\u00a74. BULL = price > 200DMA and slope > band; DEFENSIVE = price < 200DMA and slope < -band; else NEUTRAL. flat_band 0.0 means no dead zone, matching the doc.",
-    "filter_enabled": true,
+    "filter_enabled": false,
     "adjustments": {
       "BULL": {
         "accumulate": 1.0,
@@ -61,7 +61,7 @@
         "call_delta": 1.25
       }
     },
-    "_filter_note": "ENABLED 2026-09-03, on judgement rather than measurement \u2014 and the distinction matters. V5 \u00a74/\u00a720/\u00a724 specify that the regime should change accumulation aggressiveness, ATR spacing, put selection and call aggressiveness; until now it was computed, logged and displayed while NOTHING branched on it. Now wired. BULL multipliers are all 1.0 by design, so the filter can only ever WITHDRAW risk relative to the tested behaviour, never add it. MEASURED EFFECT IS ~NIL: over 626 sessions, off -> $12,648/yr, Sharpe 1.03; on -> $12,510/yr, Sharpe 1.01 (accumulation off). With accumulation on, drawdown improves slightly, 9.84% -> 9.73%. The reason is that the window was 66% BULL, 26.5% NEUTRAL and only 7.5% DEFENSIVE \u2014 the filter is a no-op in two thirds of the sample and barely acts in the rest. It is enabled because it is insurance against the regime the data does not contain, not because the backtest endorses it. Published support is indirect but strong: a 2005-2025 SPX study of 45-DTE 16-delta short premium reports Sharpe 0.52 unfiltered versus 0.81 filtered. Expect no visible benefit until the first real downtrend."
+    "_filter_note": "DISABLED 2026-09-03, reversing the decision made earlier the same day, on evidence. It remains fully wired (\u00a74/\u00a720/\u00a724) and switchable. Enabled it on judgement after measuring ~nil effect under SPREADS. Under the shipped CASH-SECURED structure it is materially harmful: at 0.30 delta, off gives $22,325/yr, 8.81% max drawdown, Sharpe 1.03; on gives $21,125, 10.11%, 0.95. At 0.50 delta the gap is wider still \u2014 $20,986/0.93 versus $16,862/0.80. It costs income AND raises drawdown, so in-sample it is not buying the protection it exists for. Mechanism: the NEUTRAL put_delta multiplier of 0.85 pushes the strike further out and collects less premium across the 26.5% of sessions that are NEUTRAL, while the real risk under this structure sits in the assigned shares, which the filter does not touch. The bear-market case is still untested \u2014 the sample is only 7.5% DEFENSIVE \u2014 so this is a judgement that measured harm outweighs unmeasurable insurance. Revisit with bear data."
   },
   "exposure_curve": {
     "_doc": "ALGORITHM.md 6. Target unit-equivalent exposure keyed to decline from reference. OPERATOR CHANGE 2026-09-03: base lifted from 1.0 to 1.25 at the highs (whole curve +0.25) so the engine has genuine appetite above the core rather than sitting exactly at target and proposing nothing. The doc's original was 1.0/1.5/2.0/2.5/3.0/3.125/3.25. Still an untested hypothesis either way - the source doc labels this table as one.",
@@ -80,7 +80,7 @@
       21,
       35
     ],
-    "short_delta_target": 0.5,
+    "short_delta_target": 0.3,
     "protective_delta_target": 0.05,
     "max_risk_reward_ratio": 10.0,
     "profit_capture_pct": 0.5,
@@ -95,8 +95,12 @@
     "_dte_note": "21-35, unchanged \u2014 V5 \u00a79. Tested against a shorter window on the hypothesis that it would collect more premium; it collects LESS. Over 626 sessions at $250k with accumulation off: 5-14 DTE -> $13,057/yr gross premium, $932 net, Sharpe 0.99; 7-14 -> $13,594 / $1,061 / 1.00; 14-21 -> $17,423 / $1,632 / 1.03; 21-35 -> $19,756 / $1,626 / 1.03; 30-45 -> $21,963 / $1,606 / 0.99. Gross premium rises monotonically with DTE. The reason is that the number of spreads written is nearly constant across every window (79-84): TRADE COUNT IS GATED BY THE LADDER ZONES, NOT BY EXPIRY. Shortening the window therefore just collects less per trade at the same frequency. 14-21 is marginally ahead of 21-35 and statistically tied with it; kept at the spec's value. To collect more premium the lever is more entries, not shorter expiries.",
     "structure": "cash_secured",
     "_structure_note": "'spread' is V5 \u00a78's mandated default. 'cash_secured' sells an unspread put with the full strike held in cash. That is NOT the naked put \u00a78 excludes \u2014 same maximum loss, but assignment is always affordable and the broker cannot liquidate mid-decline. It matters because it is the only structure that can DELIVER INVENTORY: a defined-risk spread assigns the short leg and exercises the long for a net of zero shares, so Engine A can never accumulate through it and Engine C never gets excess inventory to write calls against. It is also the structure of the CBOE PutWrite index, which over 32 years returned 10.1%/yr at 10.1% volatility against the S&P's 9.8% at 15.3%, Sharpe 0.65 versus 0.49. Governed by collateral plus \u00a731's portfolio shock test rather than \u00a710's per-position cap, because \u00a710's formula is (short - long) x multiplier and has no meaning without a long leg.",
-    "_short_delta_note": "0.50 \u2014 AT-THE-MONEY, replacing V5 \u00a79's 15-25 delta band, on both external evidence and our own measurement. The variance risk premium is largest near the money; selling 4% out of the money harvests the thin tail of it while still carrying the crash risk. The CBOE PutWrite index \u2014 the most-studied put-selling benchmark, 32+ years \u2014 sells ATM monthly puts and returns 10.1%/yr at 10.1% volatility against the S&P's 9.8% at 15.3%, Sharpe 0.65 versus 0.49. Swept over 626 sessions at $250k with accumulation off: 0.20 delta -> $1,200/yr option P&L on $25,952 gross, peak 10 concurrent; 0.25 -> $920 / $26,767 / 10; 0.30 -> $1,561 / $27,923 / 12; 0.40 -> $1,532 / $28,520 / 11; 0.50 -> $2,710 / $30,088 / 16. ATM more than DOUBLES option P&L against the old setting and raises concurrency from 10 to 16, at a modest drawdown cost (4.62% -> 5.34%) and effectively unchanged Sharpe (0.96 -> 0.97). The 0.25 row dips below 0.20, so the middle of the range is noisy \u2014 but ATM is decisively ahead of everything and agrees with 32 years of external evidence, which is convergence rather than curve-fitting. Note an ATM short put assigns roughly half the time; that is intended, and it is how the PutWrite index works.",
-    "_shipped_note": "SHIPPED CONFIGURATION as of 2026-09-03, chosen by the operator from four tested alternatives: cash-secured at-the-money puts \u2014 structurally the CBOE PutWrite index, applied to QQQ. Measured over 626 sessions at $250k: $46,191/yr, Sharpe 0.99, max drawdown 16.72%, peak 7 concurrent positions. The option line is NEGATIVE at -$6,724/yr and that is expected rather than broken: an ATM put assigns about half the time, so the 'loss' on the put is the purchase price of shares that then appreciate. The return is share appreciation plus premium, not premium alone. KNOWN TAIL: the PutWrite index fell 32.7% in 2008 against the S&P's 50.9%; put-selling cushions a crash by roughly a third, it does not avoid one. Estimated 2008 loss here is about $67,000 of $250,000. The operator accepted this explicitly."
+    "_short_delta_note": "0.30, NOT the 0.50 briefly set on 2026-09-03. That ATM figure came from a sweep run under the SPREAD structure and did not transfer to cash-secured \u2014 a structure-specific result applied to the wrong structure. Swept again under cash-secured over 626 sessions at $250k: 0.20 -> $18,770/yr, 9.74% DD, Sharpe 0.85; 0.30 -> $22,325, 8.81%, 1.03; 0.40 -> $17,193, 10.81%, 0.84; 0.50 -> $20,986, 9.16%, 0.93. 0.30 wins on return, drawdown AND Sharpe simultaneously. The 0.40 dip means the curve is noisy, but 0.30 also matches published practice \u2014 0.25-0.30 delta is the professional standard for short premium \u2014 so this is convergence rather than curve-fitting. Under spreads the ATM result stands; the two structures want different strikes.",
+    "_shipped_note": "SHIPPED CONFIGURATION as of 2026-09-03, chosen by the operator from four tested alternatives: cash-secured at-the-money puts \u2014 structurally the CBOE PutWrite index, applied to QQQ. Measured over 626 sessions at $250k: $46,191/yr, Sharpe 0.99, max drawdown 16.72%, peak 7 concurrent positions. The option line is NEGATIVE at -$6,724/yr and that is expected rather than broken: an ATM put assigns about half the time, so the 'loss' on the put is the purchase price of shares that then appreciate. The return is share appreciation plus premium, not premium alone. KNOWN TAIL: the PutWrite index fell 32.7% in 2008 against the S&P's 50.9%; put-selling cushions a crash by roughly a third, it does not avoid one. Estimated 2008 loss here is about $67,000 of $250,000. The operator accepted this explicitly.",
+    "entry_mode": "ladder",
+    "target_open_positions": 3,
+    "min_days_between_entries": 7,
+    "_entry_mode_note": "'ladder' is V5 \u00a78: write only when price touches an unused acquisition zone and total delta is below the target curve. 'scheduled' writes on a cadence while below target_open_positions. 'both' takes either trigger. Built because the ladder was proven to be the binding constraint on premium: spread count held at 79-84 across every DTE window from 5-14 to 30-45 days, so expiry was never the limiter. Ten years of SPY data show weekly writing returning 18.4%/yr against 13.2% monthly, +39%, at 55% more drawdown and Sharpe 0.88 versus 1.14 \u2014 frequency buys income and costs ride quality. Defaults to 'ladder' so the A/B is honest."
   },
   "call_engine": {
     "dte_range": [
@@ -108,7 +112,9 @@
     "profit_capture_pct": 0.6,
     "rebound_retracement_pct": 0.5,
     "min_effective_sale_vs_reference": 1.0,
-    "_doc": "\u00a78. min_effective_sale_vs_reference 1.0 means strike+premium must be >= reference price: never monetize excess inventory below the level that triggered accumulating it. Core unit is never capped."
+    "_doc": "\u00a78. min_effective_sale_vs_reference 1.0 means strike+premium must be >= reference price: never monetize excess inventory below the level that triggered accumulating it. Core unit is never capped.",
+    "cover_core": false,
+    "_cover_core_note": "False is V5 \u00a72/\u00a719: the first unit is never capped, preserving long-term Nasdaq upside. True makes the whole holding callable. Worth about $3,588/yr at today's chain \u2014 a 30-delta monthly call on the core is ~$598, twelve cycles, 50% capture. The cost is exactly what \u00a728 warns about: premium earned MINUS upside sacrificed. In a strong rally it caps the very shares held for the rally. Defaults to False so the A/B is honest."
   },
   "dividend": {
     "min_extrinsic_over_dividend_ratio": 1.25,
@@ -140,7 +146,11 @@
     "chain_strike_band_pct": 0.2,
     "polygon_max_workers": 1,
     "polygon_min_interval_seconds": 0.7,
-    "_doc": "\u00a711. Historical greeks are Black-Scholes approximations (IV backed out of the quoted mid) because Polygon's historical endpoints carry no greeks. The chain walk makes one quotes request per contract, so polygon_max_workers is pinned to 1 and requests are spaced by polygon_min_interval_seconds to stay under the ~100 req/min plan cap."
+    "_doc": "\u00a711. Historical greeks are Black-Scholes approximations (IV backed out of the quoted mid) because Polygon's historical endpoints carry no greeks. The chain walk makes one quotes request per contract, so polygon_max_workers is pinned to 1 and requests are spaced by polygon_min_interval_seconds to stay under the ~100 req/min plan cap. Backend selection and the NBBO switch are documented under 'source' and 'polygon_use_quotes'; polygon_min_interval_seconds can go to 0 on any paid tier, which are all unlimited \u2014 the 0.7 default protects the free tier's ~5 requests a minute.",
+    "source": "alpaca",
+    "_source_doc": "Which historical data backend the backtest reads: 'alpaca' (default) or 'polygon'. MEASURED 2026-09-03: Alpaca's option history begins 2024-02 \u2014 QQQ contracts expiring 2021-09, 2022-09 and 2023-09 all return zero bars \u2014 so the deepest window Alpaca can support contains no bear market. Polygon carries 5+ years on Options Advanced. The key currently in .env is on a rolling ~2-year plan and returns 403 NOT_AUTHORIZED before ~2024-09, so switching this to 'polygon' without upgrading buys nothing. Contract and expiry discovery via /v3/reference/options/contracts is NOT entitlement-gated and works on the current key, which is what makes the backend testable before paying.",
+    "polygon_use_quotes": false,
+    "_polygon_use_quotes_doc": "Fetch historical NBBO and use the measured bid/ask instead of costs.py's modelled spread. Requires Options Advanced ($199/mo) \u2014 the only tier carrying quotes. Costs one request per contract-day, cached permanently, so the first run of a window is slow and every rerun is free. When the plan lacks quotes the backend logs once and finishes on the modelled spread rather than aborting. Leave FALSE until subscribed."
   },
   "cash_sweep": {
     "enabled": false,

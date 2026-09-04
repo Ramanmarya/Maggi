@@ -108,9 +108,10 @@ class StrategyCycle:
             "Decline from reference: %.1f%% | target exposure: %.2f units | current: %.2f units",
             decline * 100, target_exposure, total_delta,
         )
-        if zone is not None and should_add_exposure(
+        wants_more = should_add_exposure(
             self._config, state.reference_price, price, total_delta
-        ):
+        )
+        if self._should_open_put(state, zone, wants_more, today):
             # Accumulate inventory by BUYING SHARES, not by waiting for
             # assignment. A defined-risk spread assigns the short leg and
             # exercises the long leg for a net of zero shares, so §7's
@@ -121,7 +122,9 @@ class StrategyCycle:
             order = self._puts.propose_spread(state, equity, state.current_regime)
             if order is not None:
                 state = self._puts.submit(state, order)
-                state = self._ladder.mark_zone_filled(state, zone, today)
+                state.last_put_entry = today.isoformat()
+                if zone is not None:
+                    state = self._ladder.mark_zone_filled(state, zone, today)
         state = self._puts.manage_existing(state, today)
 
         # 6. Call engine pass
@@ -135,8 +138,15 @@ class StrategyCycle:
             p.qty for p in snapshot.positions
             if p.asset_class == "equity" and p.symbol == self._config.symbol
         )
-        state.excess_units = max(
-            0.0, held_shares / self._config.core_unit_shares - state.core_units
+        # §2/§19 hold the core uncapped, so callable inventory is normally
+        # only what was accumulated beyond it. With cover_core the whole
+        # holding is callable: more premium, at the cost of the core's upside
+        # in a rally — which §28 says to measure as premium MINUS upside
+        # sacrificed, not premium alone.
+        held_units = held_shares / self._config.core_unit_shares
+        state.excess_units = (
+            held_units if self._config.call_cover_core
+            else max(0.0, held_units - state.core_units)
         )
         call_order = self._calls.propose_call(state, equity, state.current_regime)
         if call_order is not None:
@@ -160,6 +170,44 @@ class StrategyCycle:
         # 9. Persist state
         self._save(state)
         return state
+
+    def _should_open_put(
+        self, state: PortfolioState, zone: float | None, wants_more: bool, today: date
+    ) -> bool:
+        """Decide whether to attempt a put entry this cycle.
+
+        "ladder" is V5 §8: price must touch an unused acquisition zone AND
+        total delta must sit below the target curve. That gating is why trade
+        count held at 79-84 across every DTE window tested — the ladder, not
+        expiry, was always the limiter on premium collected.
+
+        "scheduled" writes on a cadence instead, while the book is below its
+        target position count, which is how a premium program actually
+        harvests the variance risk premium: continuously, rather than only
+        when price happens to touch a rung. The risk gates still bound every
+        individual trade, so this changes frequency, not size.
+        """
+        mode = self._config.put_entry_mode
+        ladder_ok = zone is not None and wants_more
+        if mode == "ladder":
+            return ladder_ok
+
+        # The position count and cadence gate the SCHEDULED trigger only.
+        # Applying them to the whole decision would let a recent scheduled
+        # entry suppress a legitimate ladder touch in "both" mode — the two
+        # triggers are meant to be independent.
+        scheduled_ok = (
+            sum(1 for s in state.open_put_spreads if s.status == "OPEN")
+            < self._config.put_target_open_positions
+        )
+        if scheduled_ok and state.last_put_entry:
+            try:
+                gap = (today - date.fromisoformat(state.last_put_entry)).days
+            except ValueError:
+                gap = self._config.put_min_days_between_entries
+            scheduled_ok = gap >= self._config.put_min_days_between_entries
+
+        return scheduled_ok if mode == "scheduled" else (ladder_ok or scheduled_ok)
 
     def _accumulate_shares(
         self, state: PortfolioState, snapshot, price: float,

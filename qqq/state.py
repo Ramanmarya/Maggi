@@ -64,6 +64,8 @@ class PortfolioState:
     # instead of being spent for the life of the ladder.
     zone_filled_on: dict = field(default_factory=dict)
     last_recenter_price: float | None = None
+    # ISO date of the last put entry, for the scheduled writer's cadence.
+    last_put_entry: str | None = None
     current_regime: Regime = "NEUTRAL"
     last_updated: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
@@ -84,6 +86,7 @@ class PortfolioState:
             filled_zones=d.get("filled_zones", []),
             zone_filled_on=d.get("zone_filled_on", {}),
             last_recenter_price=d.get("last_recenter_price"),
+            last_put_entry=d.get("last_put_entry"),
             current_regime=d.get("current_regime", "NEUTRAL"),
             last_updated=d.get("last_updated", datetime.now(timezone.utc).isoformat()),
         )

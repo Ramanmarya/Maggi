@@ -28,9 +28,17 @@ class CostModel:
     def option_half_spread(self, mid: float) -> float:
         return max(self.option_spread_min, mid * self.option_spread_pct) / 2.0
 
-    def option_fill_price(self, mid: float, side: str) -> float:
-        """Marketable fill: buyers pay up, sellers receive less. Never negative."""
-        half = self.option_half_spread(mid)
+    def option_fill_price(self, mid: float, side: str,
+                          half_spread: float | None = None) -> float:
+        """Marketable fill: buyers pay up, sellers receive less. Never negative.
+
+        `half_spread` overrides the model with a measured one. That is the
+        whole point of paying for historical NBBO: the modelled figure below
+        is a guess calibrated to be pessimistic, and a guess applied to every
+        open and every close compounds into a large share of a premium
+        seller's P&L. When a real quote is available, use it.
+        """
+        half = self.option_half_spread(mid) if half_spread is None else max(0.0, half_spread)
         return max(0.01, mid + half) if side == "buy" else max(0.0, mid - half)
 
     def equity_fill_price(self, price: float, side: str) -> float:

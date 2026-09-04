@@ -200,6 +200,20 @@ class StrategyConfig:
     # maximum loss, but assignment is always affordable and the broker can
     # never liquidate the position mid-decline. It is also the only structure
     # that can deliver inventory, which Engines A and C both depend on.
+    # "ladder"    — V5 §8: write only when price touches an unused zone.
+    # "scheduled" — write on a cadence while below the target position count.
+    # "both"      — either trigger fires.
+    # The ladder alone pinned trade count at 79-84 regardless of expiry, so it,
+    # not DTE, was always the limiter on premium collected.
+    put_entry_mode: str = field(
+        default_factory=lambda: str(_rule("put_engine", "entry_mode", "ladder"))
+    )
+    put_target_open_positions: int = field(
+        default_factory=lambda: int(_rule("put_engine", "target_open_positions", 3))
+    )
+    put_min_days_between_entries: int = field(
+        default_factory=lambda: int(_rule("put_engine", "min_days_between_entries", 7))
+    )
     put_structure: str = field(
         default_factory=lambda: str(_rule("put_engine", "structure", "spread"))
     )
@@ -225,6 +239,11 @@ class StrategyConfig:
     )
     rebound_retracement_pct: float = field(
         default_factory=lambda: _rule("call_engine", "rebound_retracement_pct", 0.50)
+    )
+    # False is V5 §2/§19: the core unit is never capped, preserving upside.
+    # True lets calls be written against total inventory including the core.
+    call_cover_core: bool = field(
+        default_factory=lambda: bool(_rule("call_engine", "cover_core", False))
     )
     call_min_effective_sale_vs_reference: float = field(
         default_factory=lambda: _rule("call_engine", "min_effective_sale_vs_reference", 1.0)
@@ -301,6 +320,12 @@ class StrategyConfig:
     )
     polygon_min_interval_seconds: float = field(
         default_factory=lambda: _rule("backtest", "polygon_min_interval_seconds", 0.7)
+    )
+    backtest_source: str = field(
+        default_factory=lambda: str(_rule("backtest", "source", "alpaca"))
+    )
+    polygon_use_quotes: bool = field(
+        default_factory=lambda: bool(_rule("backtest", "polygon_use_quotes", False))
     )
 
     def validate(self) -> list[str]:

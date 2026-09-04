@@ -36,11 +36,32 @@ from qqq.cycle import StrategyCycle  # noqa: E402
 from qqq.state import PortfolioState, save_state  # noqa: E402
 
 
-def run(start: date, end: date, starting_equity: float, verbose: bool,
-        state_path: Path | None = None) -> tuple:
-    config = StrategyConfig()
+def _make_data(config, source: str, verbose: bool, use_quotes: bool | None):
+    """Pick the historical data backend.
+
+    Alpaca is the default and reaches back to 2024-02. Polygon reaches five
+    years on Options Advanced and is the only source carrying historical NBBO.
+    Both write to the same cache under bare OCC symbols, so a window fetched
+    by one is readable by the other.
+    """
+    if source == "polygon":
+        from backtest.polygon_data import PolygonHistoricalData
+
+        if not config.polygon_api_key:
+            raise SystemExit("POLYGON_API_KEY required for --source polygon.")
+        return PolygonHistoricalData(config, verbose=verbose, use_quotes=use_quotes)
+    if source != "alpaca":
+        raise SystemExit(f"unknown --source {source!r}; expected alpaca or polygon")
     if not config.alpaca_api_key:
         raise SystemExit("Alpaca credentials required (historical data source).")
+    return HistoricalData(config, verbose=verbose)
+
+
+def run(start: date, end: date, starting_equity: float, verbose: bool,
+        state_path: Path | None = None, source: str | None = None,
+        use_quotes: bool | None = None) -> tuple:
+    config = StrategyConfig()
+    source = source or config.backtest_source
 
     # Isolated state file: a backtest must never touch live trading state.
     state_file = state_path or (ROOT / "backtest" / "state" / "backtest_state.json")
@@ -48,7 +69,7 @@ def run(start: date, end: date, starting_equity: float, verbose: bool,
     save_state(PortfolioState(), state_file)
     config = _with_state(config, state_file)
 
-    data = HistoricalData(config, verbose=verbose)
+    data = _make_data(config, source, verbose, use_quotes)
     broker = BacktestBroker(config, data, starting_equity, CostModel())
     broker.prime(start, end)
     cycle = StrategyCycle(broker, config)
@@ -57,7 +78,10 @@ def run(start: date, end: date, starting_equity: float, verbose: bool,
     if not sessions:
         raise SystemExit(f"no NYSE sessions between {start} and {end}")
 
+    quotes_on = getattr(data, "use_quotes", False)
     print(f"Backtest {start} .. {end}  ({len(sessions)} sessions)")
+    print(f"  data source     {source}"
+          f"{'  (measured NBBO)' if quotes_on else '  (modelled spread)'}")
     print(f"  starting equity ${starting_equity:,.2f}")
     basis = config.equity_basis_override
     basis_text = f"${basis:,.2f} (override)" if basis else "live equity"
@@ -106,10 +130,18 @@ def main() -> int:
     ap.add_argument("--end", required=True, help="YYYY-MM-DD")
     ap.add_argument("--starting-equity", type=float, default=100_000.0)
     ap.add_argument("--verbose", action="store_true")
+    ap.add_argument("--source", choices=("alpaca", "polygon"), default=None,
+                    help="historical data backend (default: rules.json backtest.source). "
+                         "alpaca reaches 2024-02; polygon reaches 5y on Options Advanced")
+    ap.add_argument("--quotes", dest="quotes", action="store_true", default=None,
+                    help="use measured NBBO instead of the modelled spread "
+                         "(polygon + Options Advanced only)")
+    ap.add_argument("--no-quotes", dest="quotes", action="store_false",
+                    help="force the modelled spread even if quotes are configured")
     a = ap.parse_args()
     run(datetime.strptime(a.start, "%Y-%m-%d").date(),
         datetime.strptime(a.end, "%Y-%m-%d").date(),
-        a.starting_equity, a.verbose)
+        a.starting_equity, a.verbose, source=a.source, use_quotes=a.quotes)
     return 0
 
 

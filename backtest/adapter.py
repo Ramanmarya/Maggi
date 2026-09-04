@@ -89,7 +89,15 @@ class BacktestBroker:
         raw = self._data.chain(self._as_of, spot, dte_range)
         out = []
         for c in raw:
-            mid = c.bid  # data layer stores the daily close in both fields
+            if c.ask > c.bid:
+                # A measured NBBO from the Polygon backend. Pass it through
+                # untouched: widening a real spread with the modelled one
+                # would charge the cost twice.
+                out.append(c)
+                continue
+            # No historical NBBO on this source, so the data layer reports the
+            # daily close in both fields and the spread is modelled here.
+            mid = c.bid
             half = self._costs.option_half_spread(mid)
             out.append(
                 OptionContract(
@@ -197,10 +205,33 @@ class BacktestBroker:
         )
 
     # ---- execution -------------------------------------------------------
+    @staticmethod
+    def _measured_half(contract) -> float | None:
+        """Half of a real quoted spread, or None when the source had no NBBO.
+
+        `ask == bid` is how the data layer signals "this is a close standing in
+        for a quote", so it is the flag for falling back to the cost model.
+        """
+        if contract is None or contract.ask <= contract.bid:
+            return None
+        return (contract.ask - contract.bid) / 2.0
+
+    def _cached_half(self, symbol: str) -> float | None:
+        """Measured half-spread for a held contract, from the quote cache.
+
+        Closing a position works from a symbol rather than a chain contract,
+        so the quote has to be looked up rather than carried in.
+        """
+        quote = self._data.cache.quote_on(symbol, self._as_of)
+        if quote is None or quote.spread <= 0:
+            return None
+        return quote.spread / 2.0
+
     def submit_vertical_spread(self, spread: VerticalSpreadOrder) -> OrderResult:
         day = self._as_of
         short_mid = (spread.short_leg.bid + spread.short_leg.ask) / 2
-        short_px = self._costs.option_fill_price(short_mid, "sell")
+        short_px = self._costs.option_fill_price(
+            short_mid, "sell", self._measured_half(spread.short_leg))
         self.ledger.fill(day, spread.short_leg.symbol, -spread.contracts, short_px, "option", "open_spread_short")
 
         # long_leg is None only in naked mode (§39 Q1); the base strategy
@@ -209,7 +240,8 @@ class BacktestBroker:
         legs = 1
         if spread.long_leg is not None:
             long_mid = (spread.long_leg.bid + spread.long_leg.ask) / 2
-            long_px = self._costs.option_fill_price(long_mid, "buy")
+            long_px = self._costs.option_fill_price(
+                long_mid, "buy", self._measured_half(spread.long_leg))
             self.ledger.fill(day, spread.long_leg.symbol, spread.contracts, long_px, "option", "open_spread_long")
             legs = 2
         self.ledger.cash -= self._costs.option_commission(spread.contracts * legs)
@@ -238,7 +270,8 @@ class BacktestBroker:
             self.ledger.cash -= self._costs.equity_commission(order.qty)
         else:
             mid = (order.contract.bid + order.contract.ask) / 2
-            px = self._costs.option_fill_price(mid, order.side)
+            px = self._costs.option_fill_price(
+                mid, order.side, self._measured_half(order.contract))
             self.ledger.fill(day, order.symbol, signed, px, "option", "single_leg")
             self.ledger.cash -= self._costs.option_commission(order.qty)
         return OrderResult(True, f"bt-leg-{uuid.uuid4().hex[:8]}", px, "filled")
@@ -265,9 +298,13 @@ class BacktestBroker:
         for sym, qty, side in pairs:
             if sym not in self.ledger.positions:
                 continue
-            bar = self._data.cache.bar_on(sym, self._as_of)
-            mid = bar.close if bar else prices.get(sym, 0.0)
-            px = self._costs.option_fill_price(mid, side)
+            quote = self._data.cache.quote_on(sym, self._as_of)
+            if quote is not None:
+                mid = quote.mid
+            else:
+                bar = self._data.cache.bar_on(sym, self._as_of)
+                mid = bar.close if bar else prices.get(sym, 0.0)
+            px = self._costs.option_fill_price(mid, side, self._cached_half(sym))
             self.ledger.fill(self._as_of, sym, qty, px, "option", "close_spread")
             total += px if side == "buy" else -px
         self.ledger.cash -= self._costs.option_commission(contracts * (2 if long_sym else 1))
