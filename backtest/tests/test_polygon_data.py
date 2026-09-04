@@ -128,11 +128,16 @@ def test_discover_expiries_uses_the_reference_endpoint_not_bar_probing(tmp_path)
 
 
 def test_contract_listing_is_cached_across_calls(tmp_path):
+    """Two reference calls on the first listing — one per half of the `expired`
+    partition — and none at all on the second, because the result is cached."""
     d = StubPolygon(_config(tmp_path), cache=BarCache(tmp_path / "c.sqlite"),
                     contracts=[_contract_row(500, "put", date(2026, 3, 20))])
     d.discover_expiries(AS_OF, (10, 60), SPOT)
+    first = sum("/reference/" in c for c in d.calls)
     d.discover_expiries(AS_OF, (10, 60), SPOT)
-    assert sum("/reference/" in c for c in d.calls) == 1
+    second = sum("/reference/" in c for c in d.calls) - first
+    assert first == 2, "expired=true and expired=false are both required"
+    assert second == 0, "the second listing must be served from cache"
 
 
 # ---- chain --------------------------------------------------------------
@@ -272,3 +277,107 @@ def test_quote_cache_negative_entries_are_not_refetched(tmp_path):
     cache.commit()
     assert cache.have_quote("QQQ260320P00460000", AS_OF) is True
     assert cache.quote_on("QQQ260320P00460000", AS_OF) is None
+
+
+def test_parallel_fetch_returns_the_same_bars_as_serial(tmp_path, monkeypatch):
+    """Parallelism must be invisible in the output. Measured 3.6 req/sec serial
+    against 40/sec at 16 workers — the difference between a 16-hour backfill and
+    a 1.5-hour one — but only if the results are identical."""
+    from dataclasses import replace as dc_replace
+
+    from backtest.cache import BarCache
+    from backtest.polygon_data import PolygonHistoricalData as PolygonData
+    from qqq.config import StrategyConfig
+
+    calls: list[str] = []
+
+    def fake_get(self, path, params=None):
+        calls.append(path)
+        occ = path.split("/ticker/")[1].split("/range")[0]
+        return {"results": [{"t": 1717200000000, "o": 1.0, "h": 1.2,
+                             "l": 0.9, "c": 1.1, "v": 10}]}
+
+    monkeypatch.setattr(PolygonData, "_get", fake_get, raising=False)
+    base = StrategyConfig(alpaca_api_key="x", alpaca_secret_key="y", polygon_api_key="k")
+    syms = [f"QQQ260918P00{s}000" for s in range(400, 460, 5)]
+
+    out = {}
+    for workers in (1, 8):
+        calls.clear()
+        cache = BarCache(tmp_path / f"w{workers}.sqlite")
+        d = PolygonData(dc_replace(base, polygon_max_workers=workers), cache=cache)
+        d.load_option_bars(syms, date(2026, 6, 1), date(2026, 9, 18))
+        out[workers] = {s: [(b.day, b.close) for b in cache.bars(s)] for s in syms}
+        assert len(calls) == len(syms), "each contract fetched exactly once"
+
+    assert out[1] == out[8], "parallel fetch produced different bars than serial"
+
+
+def test_worker_count_of_one_takes_the_serial_path(tmp_path, monkeypatch):
+    """A single worker must not spin up a pool — it is the debugging path."""
+    from dataclasses import replace as dc_replace
+
+    from backtest.cache import BarCache
+    from backtest.polygon_data import PolygonHistoricalData as PolygonData
+    from qqq.config import StrategyConfig
+
+    monkeypatch.setattr(PolygonData, "_get",
+                        lambda self, path, params=None: {"results": []}, raising=False)
+    base = StrategyConfig(alpaca_api_key="x", alpaca_secret_key="y", polygon_api_key="k")
+    d = PolygonData(dc_replace(base, polygon_max_workers=1),
+                    cache=BarCache(tmp_path / "serial.sqlite"))
+    d.load_option_bars(["QQQ260918P00450000"], date(2026, 6, 1), date(2026, 9, 18))
+    assert d.cache.have_range("QQQ260918P00450000", date(2026, 6, 1), date(2026, 9, 18))
+
+
+def test_contract_listing_covers_both_halves_of_the_expired_partition(tmp_path, monkeypatch):
+    """`expired` partitions the universe, it does not filter it. Sending only
+    expired=true returned the full chain for historical windows and NOTHING for
+    any window whose contracts had not expired yet — the chain came back empty,
+    the engine wrote no spreads, and the run still printed a plausible equity
+    curve. Both halves must be queried."""
+    from backtest.cache import BarCache
+    from backtest.polygon_data import PolygonHistoricalData
+    from qqq.config import StrategyConfig
+
+    asked: list[str] = []
+
+    def fake_get(self, path, params=None):
+        if "reference/options/contracts" not in path:
+            return {"results": []}
+        flag = (params or {}).get("expired")
+        asked.append(flag)
+        # Mimic the real API: each flag returns a disjoint half.
+        if flag == "true":
+            return {"results": [{"ticker": "O:QQQ220715P00300000",
+                                 "expiration_date": "2022-07-15",
+                                 "strike_price": 300.0, "contract_type": "put"}]}
+        return {"results": [{"ticker": "O:QQQ260918P00450000",
+                             "expiration_date": "2026-09-18",
+                             "strike_price": 450.0, "contract_type": "put"}]}
+
+    monkeypatch.setattr(PolygonHistoricalData, "_get", fake_get, raising=False)
+    d = PolygonHistoricalData(
+        StrategyConfig(alpaca_api_key="x", alpaca_secret_key="y", polygon_api_key="k"),
+        cache=BarCache(tmp_path / "part.sqlite"),
+    )
+    rows = d.list_contracts(date(2022, 6, 15), date(2022, 7, 1), date(2026, 9, 30))
+    assert sorted(asked) == ["false", "true"], "both halves must be requested"
+    assert len(rows) == 2, "results from both halves must be merged"
+
+
+def test_merged_contract_listing_does_not_duplicate(tmp_path, monkeypatch):
+    from backtest.cache import BarCache
+    from backtest.polygon_data import PolygonHistoricalData
+    from qqq.config import StrategyConfig
+
+    row = {"ticker": "O:QQQ220715P00300000", "expiration_date": "2022-07-15",
+           "strike_price": 300.0, "contract_type": "put"}
+    monkeypatch.setattr(PolygonHistoricalData, "_get",
+                        lambda self, path, params=None: {"results": [row]}, raising=False)
+    d = PolygonHistoricalData(
+        StrategyConfig(alpaca_api_key="x", alpaca_secret_key="y", polygon_api_key="k"),
+        cache=BarCache(tmp_path / "dup.sqlite"),
+    )
+    rows = d.list_contracts(date(2022, 6, 15), date(2022, 7, 1), date(2022, 7, 31))
+    assert len(rows) == 1, "the same ticker returned by both halves must appear once"

@@ -92,6 +92,7 @@ class PolygonHistoricalData:
         self.cache = cache or BarCache()
         self.verbose = verbose
         self.requests = 0
+        self._workers = int(getattr(config, 'polygon_max_workers', 8) or 8)
         self.quote_requests = 0
         self._last_request_at = 0.0
         self._valid_expiries: dict[tuple[date, int, int], list[date]] = {}
@@ -241,23 +242,38 @@ class PolygonHistoricalData:
         if key in self._contracts:
             rows = self._contracts[key]
         else:
+            # `expired` PARTITIONS the universe rather than filtering it:
+            # measured 2026-09-03, a July-2022 window returns 250 rows with
+            # expired=true and 0 with it omitted, while a September-2026
+            # window returns 0 with expired=true and 250 without. Sending only
+            # expired=true therefore worked for historical backtests and
+            # silently returned nothing for any window whose contracts had not
+            # expired yet — the chain came back empty, the engine wrote no
+            # spreads, and the run still reported a plausible equity curve.
+            # Both halves are queried and merged.
             rows = []
-            params = {
-                "underlying_ticker": self._config.symbol,
-                "expiration_date.gte": expiry_gte.isoformat(),
-                "expiration_date.lte": expiry_lte.isoformat(),
-                "expired": "true",
-                "limit": str(CONTRACTS_PAGE),
-            }
-            resp = self._get("/v3/reference/options/contracts", params)
-            while True:
-                rows.extend(resp.get("results") or [])
-                nxt = resp.get("next_url")
-                if not nxt:
-                    break
-                path = nxt[len(BASE_URL):] if nxt.startswith(BASE_URL) else nxt
-                base, _, query = path.partition("?")
-                resp = self._get(base, dict(urllib.parse.parse_qsl(query)))
+            seen: set[str] = set()
+            for expired in ("true", "false"):
+                params = {
+                    "underlying_ticker": self._config.symbol,
+                    "expiration_date.gte": expiry_gte.isoformat(),
+                    "expiration_date.lte": expiry_lte.isoformat(),
+                    "expired": expired,
+                    "limit": str(CONTRACTS_PAGE),
+                }
+                resp = self._get("/v3/reference/options/contracts", params)
+                while True:
+                    for r in resp.get("results") or []:
+                        t = r.get("ticker")
+                        if t and t not in seen:
+                            seen.add(t)
+                            rows.append(r)
+                    nxt = resp.get("next_url")
+                    if not nxt:
+                        break
+                    path = nxt[len(BASE_URL):] if nxt.startswith(BASE_URL) else nxt
+                    base, _, query = path.partition("?")
+                    resp = self._get(base, dict(urllib.parse.parse_qsl(query)))
             self._contracts[key] = rows
         if contract_type:
             rows = [r for r in rows if r.get("contract_type") == contract_type]
@@ -297,20 +313,39 @@ class PolygonHistoricalData:
         if not todo:
             return
         self._log(f"fetching {len(todo)} option contracts {start}..{end}")
-        for occ in todo:
+
+        def fetch(occ: str) -> tuple[str, list]:
             try:
                 resp = self._get(
                     f"/v2/aggs/ticker/{urllib.parse.quote(to_polygon(occ), safe=':')}"
                     f"/range/1/day/{start.isoformat()}/{end.isoformat()}",
                     {"adjusted": "true", "sort": "asc", "limit": str(AGG_LIMIT)},
                 )
-                bars = _bars_from_aggs(resp)
+                return occ, _bars_from_aggs(resp)
             except PolygonEntitlementError:
                 raise
             except (urllib.error.HTTPError, urllib.error.URLError, ValueError) as e:
                 # A contract that never traded 404s. That is data, not failure.
                 self._log(f"{occ}: {type(e).__name__} — recording empty")
-                bars = []
+                return occ, []
+
+        # Fetched in parallel because serial is the difference between a
+        # feasible backfill and an abandoned one: measured 3.6 requests/sec
+        # single-threaded against 40/sec at 16 workers with zero 429s on the
+        # options plan, which turns a ~220k-request backfill from 16.5 hours
+        # into about 1.5. Writes stay on this thread — sqlite connections are
+        # not shared across threads, and the cache is the one piece of state
+        # a race here would corrupt.
+        workers = max(1, int(self._workers))
+        if workers == 1:
+            results = [fetch(occ) for occ in todo]
+        else:
+            from concurrent.futures import ThreadPoolExecutor
+
+            with ThreadPoolExecutor(max_workers=workers) as pool:
+                results = list(pool.map(fetch, todo))
+
+        for occ, bars in results:
             self.cache.put_bars(occ, bars)
             # Marked whether or not bars came back, so a contract that never
             # listed is remembered as empty instead of refetched every run.

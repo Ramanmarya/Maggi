@@ -43,6 +43,7 @@ python3 -m qqq.orchestrator --mode intraday
 ```bash
 python3 -m backtest.run --start 2025-09-02 --end 2026-08-28
 python3 -m backtest.run --start 2026-06-01 --end 2026-08-28 --verbose
+python3 -m backtest.run --start 2021-09-01 --end 2026-08-28 --source polygon --quotes
 ```
 
 Runs the real `StrategyCycle` over real NYSE sessions with a real ledger:
@@ -50,10 +51,32 @@ fills move cash, positions are marked daily, commissions and a modelled
 spread are charged, and expiring options settle physically — an in-the-money
 short put delivers shares, which is how Engine A accumulates.
 
-Data comes from **Alpaca, not Polygon**. Both serve the same daily option
-OHLCV about 18 months back, but Polygon's plan throttles at 5 requests per
-minute and returns one contract per call; Alpaca returns 100 per call and
-does not throttle. No plan upgrade is needed for this.
+Data comes from **Alpaca by default**. Alpaca returns 100 contracts per call
+and does not throttle, where Polygon's current plan throttles at 5 requests a
+minute and returns one contract per call, so Alpaca is much the faster source
+for any window it can serve.
+
+**How far back each source reaches** (measured 2026-09-03, not read off a
+docs page):
+
+| source | option history | NBBO quotes |
+|---|---|---|
+| Alpaca | starts **2024-02** — 2021/2022/2023 return zero bars | no |
+| Polygon, current key | rolling ~2y; 403 before ~2024-09 | no |
+| Polygon Options Advanced ($199/mo) | 5+ years | **yes** |
+
+So the deepest window Alpaca can support contains no bear market. A five-year
+run — the one that puts the 2022 decline inside the sample — needs
+`--source polygon` on Options Advanced. `--quotes` then replaces `costs.py`'s
+modelled spread with the measured one; it is inert without the subscription,
+and the backend logs that it is falling back rather than returning empty data.
+
+Budget for a cold five-year backfill: **~220k requests**, a few hours on an
+unlimited plan. Each contract is fetched once over its whole life rather than
+once per session — the naive alternative is ~3.7M requests. Backfill **wider
+strike bands than the strategy currently trades**: the cache is permanent, but
+a later config change against narrow cached bands means re-subscribing to
+re-pull.
 
 Everything is cached to `backtest/cache/bars.sqlite` on first fetch, so the
 first run over a new window is network-bound and every rerun after it is

@@ -144,13 +144,14 @@
     "risk_free_rate": 0.045,
     "dividend_yield_estimate": 0.006,
     "chain_strike_band_pct": 0.2,
-    "polygon_max_workers": 1,
+    "polygon_max_workers": 12,
     "polygon_min_interval_seconds": 0.7,
     "_doc": "\u00a711. Historical greeks are Black-Scholes approximations (IV backed out of the quoted mid) because Polygon's historical endpoints carry no greeks. The chain walk makes one quotes request per contract, so polygon_max_workers is pinned to 1 and requests are spaced by polygon_min_interval_seconds to stay under the ~100 req/min plan cap. Backend selection and the NBBO switch are documented under 'source' and 'polygon_use_quotes'; polygon_min_interval_seconds can go to 0 on any paid tier, which are all unlimited \u2014 the 0.7 default protects the free tier's ~5 requests a minute.",
     "source": "alpaca",
     "_source_doc": "Which historical data backend the backtest reads: 'alpaca' (default) or 'polygon'. MEASURED 2026-09-03: Alpaca's option history begins 2024-02 \u2014 QQQ contracts expiring 2021-09, 2022-09 and 2023-09 all return zero bars \u2014 so the deepest window Alpaca can support contains no bear market. Polygon carries 5+ years on Options Advanced. The key currently in .env is on a rolling ~2-year plan and returns 403 NOT_AUTHORIZED before ~2024-09, so switching this to 'polygon' without upgrading buys nothing. Contract and expiry discovery via /v3/reference/options/contracts is NOT entitlement-gated and works on the current key, which is what makes the backend testable before paying.",
     "polygon_use_quotes": false,
-    "_polygon_use_quotes_doc": "Fetch historical NBBO and use the measured bid/ask instead of costs.py's modelled spread. Requires Options Advanced ($199/mo) \u2014 the only tier carrying quotes. Costs one request per contract-day, cached permanently, so the first run of a window is slow and every rerun is free. When the plan lacks quotes the backend logs once and finishes on the modelled spread rather than aborting. Leave FALSE until subscribed."
+    "_polygon_use_quotes_doc": "Fetch historical NBBO and use the measured bid/ask instead of costs.py's modelled spread. Requires Options Advanced ($199/mo) \u2014 the only tier carrying quotes. Costs one request per contract-day, cached permanently, so the first run of a window is slow and every rerun is free. When the plan lacks quotes the backend logs once and finishes on the modelled spread rather than aborting. Leave FALSE until subscribed.",
+    "_polygon_workers_note": "12 parallel fetchers. Measured on the upgraded options plan: 3.6 requests/sec single-threaded, 14.2 at 4 workers, 27.5 at 8, 40.0 at 16, with ZERO 429s at every level. That turns a ~220k request backfill from 16.5 hours into roughly 1.5-2. Set to 12 rather than 16 to leave headroom \u2014 the previous system once burned 9,455 calls into rate-limit errors, and the cost of being wrong here is a throttled account, not a slow one. Reads are parallel; cache writes stay single-threaded because sqlite connections are not shareable across threads."
   },
   "cash_sweep": {
     "enabled": false,

@@ -59,4 +59,16 @@ See [ALGORITHM.md §11](ALGORITHM.md#11-whats-still-a-placeholder). The two
 that block real use: the live dividend calendar returns empty (so ex-div
 safety is untested — do not sell calls live until it is wired), and the
 backtest models the bid/ask spread rather than measuring it, because neither
-data plan carries historical NBBO.
+data plan *currently subscribed* carries historical NBBO.
+
+The second is now a subscription away rather than a code gap.
+`backtest/polygon_data.py` reads measured NBBO when the key carries it; set
+`backtest.source` to `polygon` and `backtest.polygon_use_quotes` to true in
+[qqq/rules.json](qqq/rules.json), or pass `--source polygon --quotes`. Both
+switches are inert on the current plan and the backend says so rather than
+silently returning empty data.
+
+**Backtest window is limited by the data plan, not the code** (measured
+2026-09-03): Alpaca option history starts 2024-02, and the Polygon key in
+`.env` is on a rolling ~2-year plan. A five-year run needs Polygon Options
+Advanced, which is also the only tier carrying NBBO.

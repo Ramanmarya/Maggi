@@ -92,13 +92,31 @@ def run(start: date, end: date, starting_equity: float, verbose: bool,
     # Seed the curve with the pre-trade balance on the session before the
     # first, so day one's own fills are inside the measured return rather
     # than silently forming the baseline.
+    errors: list[tuple[date, str]] = []
+    max_errors = 0  # zero tolerance: one silent failure already cost a headline number
     curve: list[tuple[date, float]] = [(sessions[0] - timedelta(days=1), starting_equity)]
     for i, day in enumerate(sessions):
         broker.set_as_of(day)
         try:
             cycle.run_daily_cycle()
         except Exception as e:
+            # A cycle that raises has executed PART of its decisions — it may
+            # have bought shares and then aborted before writing options, or
+            # recorded a fill and then failed to persist it. The resulting
+            # equity curve is not a result, it is debris.
+            #
+            # This is not hypothetical: a run reported $46,191/yr while every
+            # cash-secured order was raising AttributeError inside submit().
+            # The number looked plausible and was quoted as a finding.
+            errors.append((day, f"{type(e).__name__}: {e}"))
             print(f"  {day}  CYCLE ERROR {type(e).__name__}: {e}")
+            if len(errors) > max_errors:
+                raise RuntimeError(
+                    f"aborting: {len(errors)} cycles raised, most recently on {day} "
+                    f"({type(e).__name__}: {e}). A partially-executed backtest produces "
+                    f"a plausible-looking equity curve that means nothing. Fix the "
+                    f"exception rather than reading the result."
+                ) from e
         for ev in broker.settle():
             print(f"  {day}  {ev}")
         equity = broker.get_current_positions().equity
@@ -111,6 +129,11 @@ def run(start: date, end: date, starting_equity: float, verbose: bool,
     commission = sum(
         CostModel().option_commission(abs(f.qty)) for f in broker.ledger.fills if f.kind == "option"
     )
+    if errors:
+        print(f"\n  !! {len(errors)} cycle(s) raised — results below are UNRELIABLE")
+        for d, e in errors[:5]:
+            print(f"     {d}  {e}")
+
     metrics = compute(curve, broker.ledger, commission)
     print(f"\n{'='*62}\n  RESULTS\n{'='*62}")
     print(metrics.render())

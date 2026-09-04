@@ -306,8 +306,20 @@ class PutSpreadEngine:
         if credit <= 0:
             return 0.0
         short_mark = self._broker.option_mark(spread.short_symbol) if spread.short_symbol else None
-        long_mark = self._broker.option_mark(spread.long_symbol) if spread.long_symbol else None
-        if short_mark is None or long_mark is None:
+        if short_mark is None:
             return 0.0
+
+        # An unspread position has no long leg, and demanding one here silently
+        # disabled profit-taking for every cash-secured put: capture returned
+        # 0.0 forever and the 3-DTE force-close became the only exit, quietly
+        # turning a 50%-capture strategy into a hold-to-expiry one. Absent long
+        # leg means zero cost to buy back, not "unknown".
+        if spread.long_symbol:
+            long_mark = self._broker.option_mark(spread.long_symbol)
+            if long_mark is None:
+                return 0.0
+        else:
+            long_mark = 0.0
+
         cost_to_close = short_mark - long_mark
         return (credit - cost_to_close) / credit
